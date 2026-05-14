@@ -23,13 +23,17 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "pnpm lint && pnpm format:check && pnpm typecheck"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "verify": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",
     "@commitlint/config-conventional": "^21.0.1",
     "@eslint/js": "^9.16.0",
     "@types/node": "^20.16.0",
+    "@vitest/coverage-v8": "^4.1.6",
     "eslint": "^9.16.0",
     "eslint-config-prettier": "^9.1.0",
     "globals": "^17.6.0",
@@ -37,6 +41,7 @@
     "lint-staged": "^17.0.4",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.18.0"
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^4.1.6"
   }
 }
