@@ -1,0 +1,26 @@
+{
+  "name": "vellum",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Self-hostable AI bookkeeper for freelancers and small teams",
+  "license": "AGPL-3.0-or-later",
+  "author": "Gurgen Yeghiazaryan <gaaegiazaryan@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gaaegiazaryan/vellum.git"
+  },
+  "homepage": "https://github.com/gaaegiazaryan/vellum",
+  "bugs": "https://github.com/gaaegiazaryan/vellum/issues",
+  "engines": {
+    "node": ">=20.19.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.0",
+    "typescript": "^5.7.2"
+  }
+}
