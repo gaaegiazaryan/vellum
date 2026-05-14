@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.next/
+.nuxt/
+.output/
+.turbo/
+coverage/
+pnpm-lock.yaml
+LICENSE
