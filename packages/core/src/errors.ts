@@ -40,3 +40,9 @@ export class UnbalancedEntryError extends DomainError {
     super(`journal entry is unbalanced: debits=${debitTotal}, credits=${creditTotal}`);
   }
 }
+
+export class NegativeLedgerAmountError extends DomainError {
+  constructor(readonly amount: bigint) {
+    super(`ledger line amount must be non-negative, got ${amount}`);
+  }
+}

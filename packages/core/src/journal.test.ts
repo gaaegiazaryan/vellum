@@ -4,10 +4,16 @@ import {
   assertBalanced,
   netBalance,
   journalEntrySchema,
+  ledgerLineSchema,
   type JournalEntry,
   type LedgerLine,
 } from './journal.js';
-import { EntryTooSmallError, MixedCurrencyEntryError, UnbalancedEntryError } from './errors.js';
+import {
+  EntryTooSmallError,
+  MixedCurrencyEntryError,
+  NegativeLedgerAmountError,
+  UnbalancedEntryError,
+} from './errors.js';
 
 const USD = currency('USD');
 const EUR = currency('EUR');
@@ -140,5 +146,64 @@ describe('journalEntrySchema', () => {
         lines: [{ accountId: 'cash', side: 'DEBIT', amount: { amount: '1', currency: 'USD' } }],
       }),
     ).toThrow();
+  });
+
+  it('rejects an entry with an empty description', () => {
+    expect(() =>
+      journalEntrySchema.parse({
+        id: 'je_1',
+        occurredAt: '2026-05-15T00:00:00Z',
+        description: '',
+        lines: [
+          { accountId: 'a', side: 'DEBIT', amount: { amount: '1', currency: 'USD' } },
+          { accountId: 'b', side: 'CREDIT', amount: { amount: '1', currency: 'USD' } },
+        ],
+      }),
+    ).toThrow();
+  });
+});
+
+describe('ledgerLineSchema', () => {
+  it('accepts a positive amount', () => {
+    const parsed = ledgerLineSchema.parse({
+      accountId: 'cash',
+      side: 'DEBIT',
+      amount: { amount: '100', currency: 'USD' },
+    });
+    expect(parsed.amount.amount).toBe(100n);
+  });
+
+  it('accepts a zero amount', () => {
+    const parsed = ledgerLineSchema.parse({
+      accountId: 'cash',
+      side: 'DEBIT',
+      amount: { amount: '0', currency: 'USD' },
+    });
+    expect(parsed.amount.isZero()).toBe(true);
+  });
+
+  it('rejects a negative amount', () => {
+    expect(() =>
+      ledgerLineSchema.parse({
+        accountId: 'cash',
+        side: 'DEBIT',
+        amount: { amount: '-100', currency: 'USD' },
+      }),
+    ).toThrow();
+  });
+});
+
+describe('assertBalanced negative-amount defense', () => {
+  it('rejects a hand-constructed entry with a negative line amount', () => {
+    const e: JournalEntry = {
+      id: 'je_x',
+      occurredAt: new Date('2026-05-15T00:00:00Z'),
+      description: 'bypass schema',
+      lines: [
+        { accountId: 'a', side: 'DEBIT', amount: new Money(-100n, USD) },
+        { accountId: 'b', side: 'CREDIT', amount: new Money(-100n, USD) },
+      ],
+    };
+    expect(() => assertBalanced(e)).toThrow(NegativeLedgerAmountError);
   });
 });
