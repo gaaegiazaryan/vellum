@@ -1,12 +1,19 @@
 import { z } from 'zod';
 import { Money, moneySchema } from './money.js';
 import { sideSchema } from './account.js';
-import { EntryTooSmallError, MixedCurrencyEntryError, UnbalancedEntryError } from './errors.js';
+import {
+  EntryTooSmallError,
+  MixedCurrencyEntryError,
+  NegativeLedgerAmountError,
+  UnbalancedEntryError,
+} from './errors.js';
 
 export const ledgerLineSchema = z.object({
   accountId: z.string().min(1),
   side: sideSchema,
-  amount: moneySchema,
+  amount: moneySchema.refine((m) => !m.isNegative(), {
+    message: 'ledger line amount must be non-negative; sign comes from side',
+  }),
   memo: z.string().optional(),
 });
 
@@ -15,7 +22,7 @@ export type LedgerLine = z.infer<typeof ledgerLineSchema>;
 export const journalEntrySchema = z.object({
   id: z.string().min(1),
   occurredAt: z.coerce.date(),
-  description: z.string(),
+  description: z.string().min(1),
   lines: z.array(ledgerLineSchema).min(2),
 });
 
@@ -34,6 +41,9 @@ export function assertBalanced(entry: JournalEntry): void {
   let debitTotal = 0n;
   let creditTotal = 0n;
   for (const line of entry.lines) {
+    if (line.amount.isNegative()) {
+      throw new NegativeLedgerAmountError(line.amount.amount);
+    }
     if (line.side === 'DEBIT') {
       debitTotal += line.amount.amount;
     } else {
