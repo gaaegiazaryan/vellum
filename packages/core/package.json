@@ -1,0 +1,16 @@
+{
+  "name": "@vellum/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vellum domain primitives: Money, accounts, journal entries, ledger invariants",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  }
+}
