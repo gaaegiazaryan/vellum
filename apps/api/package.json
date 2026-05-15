@@ -1,0 +1,28 @@
+{
+  "name": "@vellum/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vellum HTTP API. NestJS on Fastify with pino logging",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-fastify": "^11.0.0",
+    "@vellum/core": "workspace:*",
+    "nestjs-pino": "^4.3.0",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0",
+    "pino-pretty": "^13.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.0",
+    "tsx": "^4.19.0"
+  }
+}

@@ -18,7 +18,7 @@
   "packageManager": "pnpm@10.30.3",
   "scripts": {
     "prepare": "husky",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && pnpm -r --if-present --workspace-concurrency=1 typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
