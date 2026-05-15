@@ -14,3 +14,4 @@ An accepted ADR is immutable. If we change our minds, we write a new ADR that su
 
 - [0000](./0000-record-architecture-decisions.md): Record architecture decisions
 - [0001](./0001-monorepo-layout.md): Monorepo layout
+- [0002](./0002-orm-drizzle.md): Use Drizzle as the ORM
