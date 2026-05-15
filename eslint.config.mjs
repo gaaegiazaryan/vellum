@@ -13,6 +13,7 @@ export default [
       '**/.nuxt/**',
       '**/.output/**',
       '**/coverage/**',
+      '**/next-env.d.ts',
     ],
   },
   js.configs.recommended,

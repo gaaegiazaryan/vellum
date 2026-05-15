@@ -1,0 +1,23 @@
+{
+  "name": "@vellum/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vellum web app. Next.js 15 App Router",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vellum/core": "workspace:*",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
+}
