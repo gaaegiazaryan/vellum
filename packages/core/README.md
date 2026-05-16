@@ -9,6 +9,7 @@ Domain primitives shared between the Vellum API and web app. Lives inside the mo
 - `Account`, `AccountType` (ASSET / LIABILITY / EQUITY / REVENUE / EXPENSE), `Side` (DEBIT / CREDIT)
 - `JournalEntry`, `LedgerLine`
 - `assertBalanced(entry)` and `netBalance(lines)` for the double-entry invariant
+- `normalBalanceFor(type)` returns the side on which an account's balance increases
 - Zod schemas for every shape; parsing produces typed domain objects with `Money` instances inside
 - Domain errors (`InvalidCurrencyError`, `CurrencyMismatchError`, `EntryTooSmallError`, `MixedCurrencyEntryError`, `UnbalancedEntryError`, `NegativeLedgerAmountError`) for caller pattern matching
 
