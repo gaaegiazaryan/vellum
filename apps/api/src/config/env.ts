@@ -7,6 +7,12 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
     LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
+    DATABASE_URL: z
+      .string()
+      .url()
+      .refine((u) => u.startsWith('postgres://') || u.startsWith('postgresql://'), {
+        message: 'DATABASE_URL must be a postgres:// or postgresql:// connection string',
+      }),
   })
   .transform((env) => ({
     ...env,
