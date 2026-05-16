@@ -1,8 +1,9 @@
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as authSchema from './schema/auth.js';
+import * as idempotencySchema from './schema/idempotency.js';
 
-const schema = { ...authSchema };
+const schema = { ...authSchema, ...idempotencySchema };
 
 export type Db = PostgresJsDatabase<typeof schema>;
 
