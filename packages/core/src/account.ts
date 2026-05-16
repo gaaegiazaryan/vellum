@@ -17,3 +17,15 @@ export const accountSchema = z.object({
 });
 
 export type Account = z.infer<typeof accountSchema>;
+
+const NORMAL_BALANCE: Record<AccountType, Side> = {
+  ASSET: 'DEBIT',
+  EXPENSE: 'DEBIT',
+  LIABILITY: 'CREDIT',
+  EQUITY: 'CREDIT',
+  REVENUE: 'CREDIT',
+};
+
+export function normalBalanceFor(type: AccountType): Side {
+  return NORMAL_BALANCE[type];
+}
