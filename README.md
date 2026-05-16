@@ -11,7 +11,9 @@ Pre-alpha. Core ledger and extraction pipeline are in progress. Not yet usable, 
 
 ## Stack
 
-Next.js 14, NestJS, PostgreSQL, Redis, Anthropic + OpenAI vision APIs. TypeScript, strict mode. See [docs/architecture.md](./docs/architecture.md) for how it fits together.
+Next.js 15 on the App Router. NestJS on the Fastify adapter. PostgreSQL with Drizzle for the ledger and the rest. Auth.js v5 for sessions. Redis for the job queue and pub/sub. Anthropic and OpenAI vision APIs for extraction. TypeScript strict everywhere.
+
+See [docs/architecture.md](./docs/architecture.md) for how the pieces fit together, and [docs/adr/](./docs/adr/) for the specific choices and the trade-offs behind them.
 
 ## Roadmap
 
