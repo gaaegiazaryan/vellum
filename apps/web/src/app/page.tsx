@@ -13,8 +13,8 @@ export default function HomePage() {
       </p>
       <p>
         Architecture and decisions are written down as Architecture Decision Records in{' '}
-        <code>docs/adr/</code>. There are three so far, covering the monorepo layout, the ORM
-        choice, and the authentication strategy.
+        <code>docs/adr/</code>. Each one names the trade-offs considered and why we landed where we
+        did.
       </p>
       <p className="muted">
         AGPL-3.0-or-later. No telemetry, no signup wall, no tracking pixel on this page.
