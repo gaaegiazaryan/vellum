@@ -26,3 +26,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm verify
+
+      - name: build web
+        run: pnpm --filter @vellum/web build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
