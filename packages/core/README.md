@@ -10,12 +10,13 @@ Domain primitives shared between the Vellum API and web app. Lives inside the mo
 - `JournalEntry`, `LedgerLine`
 - `assertBalanced(entry)` and `netBalance(lines)` for the double-entry invariant
 - `normalBalanceFor(type)` returns the side on which an account's balance increases
+- `CURRENCIES` registry plus `decimalsFor`, `formatMinorUnits`, `parseMajorUnits` for per-currency precision (USD = 2, JPY = 0, BHD = 3, etc.)
 - Zod schemas for every shape; parsing produces typed domain objects with `Money` instances inside
 - Domain errors (`InvalidCurrencyError`, `CurrencyMismatchError`, `EntryTooSmallError`, `MixedCurrencyEntryError`, `UnbalancedEntryError`, `NegativeLedgerAmountError`) for caller pattern matching
 
 ## Conventions
 
-- Amounts are integer minor units of their currency. Major-unit conversion (e.g. 100 → "$1.00") is not the responsibility of this package; the formatter that needs it must know the per-currency decimal count.
+- Amounts are integer minor units of their currency. Use `formatMinorUnits` / `parseMajorUnits` from the currencies module to convert at the UI or API boundary; the per-currency decimal count comes from the `CURRENCIES` registry.
 - A ledger line's `amount` is non-negative. Sign comes from `side`.
 - `Money.toJSON()` serializes `amount` as a string so bigint round-trips through JSON.
 
