@@ -33,7 +33,10 @@ pnpm --filter @vellum/api db:push         # push schema directly (local dev only
 
 ## Tests
 
-Unit tests live alongside source files (`*.test.ts`). The healthz controller has no dependencies, so its test instantiates the class directly without spinning up the Nest DI container. Once we wire controllers with real dependencies, those tests will use `@nestjs/testing`'s `Test.createTestingModule`.
+Two layers, both Vitest:
+
+- `*.test.ts` are unit tests next to the source. They instantiate classes directly without a DI container; fast and simple.
+- `*.integration.test.ts` boot a real Fastify pipeline via `Test.createTestingModule` and `fastify.inject()`. No HTTP socket, no flakiness, full middleware and routing surface exercised.
 
 Run from the repo root: `pnpm test apps/api`.
 
