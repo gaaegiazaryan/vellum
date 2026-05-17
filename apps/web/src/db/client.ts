@@ -1,14 +1,15 @@
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as authSchema from './schema/auth';
+import * as credentialsSchema from './schema/credentials';
 
 /**
- * Single Drizzle client for the web app. The web side only needs the
- * auth tables today; lazy-init keeps the connection out of the bundle
- * at build time when DATABASE_URL is intentionally unset.
+ * Single Drizzle client for the web app. Lazy-init keeps the connection
+ * out of the bundle at build time when DATABASE_URL is intentionally
+ * unset.
  */
 
-const schema = { ...authSchema };
+const schema = { ...authSchema, ...credentialsSchema };
 export type WebDb = PostgresJsDatabase<typeof schema>;
 
 let cached: { db: WebDb; close: () => Promise<void> } | null = null;

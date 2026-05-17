@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.7.0",
+    "@node-rs/argon2": "^2.0.0",
     "@vellum/core": "workspace:*",
     "drizzle-orm": "^0.36.0",
     "next": "^15.0.0",
