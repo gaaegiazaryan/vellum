@@ -27,6 +27,9 @@ jobs:
 
       - run: pnpm verify
 
+      - name: db integration tests
+        run: pnpm test:db
+
       - name: build web
         run: pnpm --filter @vellum/web build
         env:
