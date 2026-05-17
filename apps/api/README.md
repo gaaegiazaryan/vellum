@@ -42,9 +42,10 @@ Run from the repo root: `pnpm test apps/api`.
 
 ## Configuration
 
-| Variable       | Default                        | Purpose                                  |
-| -------------- | ------------------------------ | ---------------------------------------- |
-| `DATABASE_URL` | required                       | `postgres://...` connection string       |
-| `PORT`         | `3001`                         | HTTP listen port                         |
-| `LOG_LEVEL`    | `debug` in dev, `info` in prod | pino level                               |
-| `NODE_ENV`     | `development`                  | switches log transport and default level |
+| Variable       | Default                        | Purpose                                   |
+| -------------- | ------------------------------ | ----------------------------------------- |
+| `DATABASE_URL` | required                       | `postgres://...` connection string        |
+| `AUTH_SECRET`  | required, >=32 chars           | shared with apps/web, decrypts JWE cookie |
+| `PORT`         | `3001`                         | HTTP listen port                          |
+| `LOG_LEVEL`    | `debug` in dev, `info` in prod | pino level                                |
+| `NODE_ENV`     | `development`                  | switches log transport and default level  |
