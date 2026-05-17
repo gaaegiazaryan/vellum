@@ -15,6 +15,13 @@
       "when": 1778945331808,
       "tag": "0001_cold_anthem",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778945686368,
+      "tag": "0002_great_carmella_unuscione",
+      "breakpoints": true
     }
   ]
 }
