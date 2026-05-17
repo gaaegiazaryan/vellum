@@ -33,18 +33,20 @@ pnpm --filter @vellum/api db:push         # push schema directly (local dev only
 
 ## Tests
 
-Two layers, both Vitest:
+Three layers, all Vitest:
 
 - `*.test.ts` are unit tests next to the source. They instantiate classes directly without a DI container; fast and simple.
 - `*.integration.test.ts` boot a real Fastify pipeline via `Test.createTestingModule` and `fastify.inject()`. No HTTP socket, no flakiness, full middleware and routing surface exercised.
+- `*.db.test.ts` spin up a Postgres container via Testcontainers, apply all migrations, and exercise DB-level invariants (single-row CHECKs, the deferred constraint trigger on `ledger_lines`). Slower (~5s for container boot) and excluded from the default `pnpm test`. Run them with `pnpm test:db`. Requires Docker.
 
-Run from the repo root: `pnpm test apps/api`.
+Run from the repo root: `pnpm test apps/api` for the fast suite, `pnpm test:db` for the DB suite.
 
 ## Configuration
 
-| Variable       | Default                        | Purpose                                  |
-| -------------- | ------------------------------ | ---------------------------------------- |
-| `DATABASE_URL` | required                       | `postgres://...` connection string       |
-| `PORT`         | `3001`                         | HTTP listen port                         |
-| `LOG_LEVEL`    | `debug` in dev, `info` in prod | pino level                               |
-| `NODE_ENV`     | `development`                  | switches log transport and default level |
+| Variable       | Default                        | Purpose                                   |
+| -------------- | ------------------------------ | ----------------------------------------- |
+| `DATABASE_URL` | required                       | `postgres://...` connection string        |
+| `AUTH_SECRET`  | required, >=32 chars           | shared with apps/web, decrypts JWE cookie |
+| `PORT`         | `3001`                         | HTTP listen port                          |
+| `LOG_LEVEL`    | `debug` in dev, `info` in prod | pino level                                |
+| `NODE_ENV`     | `development`                  | switches log transport and default level  |

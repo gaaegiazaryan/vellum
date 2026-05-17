@@ -13,6 +13,7 @@ const envSchema = z
       .refine((u) => u.startsWith('postgres://') || u.startsWith('postgresql://'), {
         message: 'DATABASE_URL must be a postgres:// or postgresql:// connection string',
       }),
+    AUTH_SECRET: z.string().min(32, 'AUTH_SECRET must be at least 32 characters'),
   })
   .transform((env) => ({
     ...env,

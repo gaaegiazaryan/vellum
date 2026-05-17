@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { EnvValidationError, loadEnv } from './env.js';
 
 const VALID_DB = 'postgres://user:pass@localhost:5432/vellum';
-const base = { DATABASE_URL: VALID_DB } as const;
+const VALID_SECRET = 'a'.repeat(32);
+const base = { DATABASE_URL: VALID_DB, AUTH_SECRET: VALID_SECRET } as const;
 
 describe('loadEnv', () => {
   it('returns defaults when only required env vars are set', () => {
@@ -62,6 +63,14 @@ describe('loadEnv', () => {
 
   it('rejects an unknown NODE_ENV', () => {
     expect(() => loadEnv({ ...base, NODE_ENV: 'staging' })).toThrow(EnvValidationError);
+  });
+
+  it('rejects a missing AUTH_SECRET', () => {
+    expect(() => loadEnv({ DATABASE_URL: VALID_DB })).toThrow(EnvValidationError);
+  });
+
+  it('rejects an AUTH_SECRET shorter than 32 characters', () => {
+    expect(() => loadEnv({ ...base, AUTH_SECRET: 'short' })).toThrow(EnvValidationError);
   });
 
   it('formats validation errors with the offending field path', () => {
