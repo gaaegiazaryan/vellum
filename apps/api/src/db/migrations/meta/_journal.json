@@ -24,6 +24,13 @@
       "breakpoints": true
     },
     {
+      "idx": 3,
+      "version": "7",
+      "when": 1779019100000,
+      "tag": "0003_balance_trigger",
+      "breakpoints": true
+    },
+    {
       "idx": 4,
       "version": "7",
       "when": 1779025000000,
