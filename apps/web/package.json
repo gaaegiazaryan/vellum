@@ -11,10 +11,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@auth/drizzle-adapter": "^1.7.0",
     "@vellum/core": "workspace:*",
+    "drizzle-orm": "^0.36.0",
     "next": "^15.0.0",
+    "next-auth": "^5.0.0-beta.25",
+    "postgres": "^3.4.5",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
