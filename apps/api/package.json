@@ -29,6 +29,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@nestjs/testing": "^11.0.0",
     "@types/node": "^20.16.0",
     "drizzle-kit": "^0.28.0",
     "tsx": "^4.19.0"
