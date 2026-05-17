@@ -3,8 +3,14 @@ import { pgTable, text, timestamp, integer, primaryKey, uniqueIndex } from 'driz
 
 /**
  * Schema for Auth.js v5 with the Drizzle adapter. Column names and types
- * match the adapter's expectations so the adapter can read and write
- * these tables without a custom mapping layer.
+ * match the adapter's expectations so it can read and write these tables
+ * without a custom mapping layer.
+ *
+ * This file mirrors apps/api/src/db/schema/auth.ts on purpose: both apps
+ * share the same database, both need typed access to the same tables,
+ * but apps cannot import from each other in the monorepo. The right
+ * long-term home is a packages/db extraction; tracked as a follow-up.
+ * If you change one of these files, change the other in the same PR.
  */
 
 export const users = pgTable(

@@ -27,7 +27,15 @@ jobs:
 
       - run: pnpm verify
 
+      - name: db integration tests
+        run: pnpm test:db
+
       - name: build web
         run: pnpm --filter @vellum/web build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+          # Placeholders so the Auth.js + Drizzle adapter init does not throw
+          # at build-time. No connection is made during the build itself.
+          DATABASE_URL: postgres://placeholder:placeholder@localhost:5432/placeholder
+          AUTH_SECRET: ci-build-placeholder-32-chars-aaaaaa
+          AUTH_TRUST_HOST: 'true'
