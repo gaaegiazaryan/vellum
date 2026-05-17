@@ -19,6 +19,7 @@
     "@nestjs/platform-fastify": "^11.0.0",
     "@vellum/core": "workspace:*",
     "drizzle-orm": "^0.36.0",
+    "fastify": "^5.0.0",
     "nestjs-pino": "^4.3.0",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
@@ -30,8 +31,10 @@
   },
   "devDependencies": {
     "@nestjs/testing": "^11.0.0",
+    "@testcontainers/postgresql": "^10.16.0",
     "@types/node": "^20.16.0",
     "drizzle-kit": "^0.28.0",
+    "testcontainers": "^10.16.0",
     "tsx": "^4.19.0"
   }
 }
