@@ -162,4 +162,84 @@ describe('AccountsController (integration)', () => {
     });
     expect(res.statusCode).toBe(404);
   });
+
+  describe('GET /accounts/:id/balance', () => {
+    it('returns zero totals for an account with no entries', async () => {
+      const create = await post(
+        { code: '6000-balance-empty', name: 'Empty', type: 'ASSET' },
+        'idem-bal-empty',
+      );
+      expect(create.statusCode).toBe(201);
+      const id = (create.json() as { id: string }).id;
+      const res = await app.inject({
+        method: 'GET',
+        url: `/accounts/${id}/balance`,
+        headers: { cookie },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { totals: unknown[]; normalBalance: string };
+      expect(body.totals).toEqual([]);
+      expect(body.normalBalance).toBe('DEBIT');
+    });
+
+    it('computes signed balance for a debit-normal account after a balanced entry', async () => {
+      const asset = await post(
+        { code: '6001-bal-cash', name: 'Cash', type: 'ASSET' },
+        'idem-bal-cash',
+      );
+      const revenue = await post(
+        { code: '6001-bal-rev', name: 'Revenue', type: 'REVENUE' },
+        'idem-bal-rev',
+      );
+      const assetId = (asset.json() as { id: string }).id;
+      const revenueId = (revenue.json() as { id: string }).id;
+
+      // Insert one balanced entry directly via SQL so the test does not
+      // depend on the journal-entries endpoint (which lives in a separate
+      // PR and may not be on this branch).
+      await sql`INSERT INTO journal_entries (id, occurred_at, description, currency)
+                VALUES ('je_bal_1', now(), 'sale 1', 'USD')`;
+      await sql`INSERT INTO ledger_lines (journal_entry_id, account_id, side, amount, position)
+                VALUES ('je_bal_1', ${assetId}, 'DEBIT', 1500, 0),
+                       ('je_bal_1', ${revenueId}, 'CREDIT', 1500, 1)`;
+
+      const cashBal = await app.inject({
+        method: 'GET',
+        url: `/accounts/${assetId}/balance`,
+        headers: { cookie },
+      });
+      expect(cashBal.statusCode).toBe(200);
+      const cashBody = cashBal.json() as {
+        normalBalance: string;
+        totals: Array<{ currency: string; balance: string; debits: string; credits: string }>;
+      };
+      expect(cashBody.normalBalance).toBe('DEBIT');
+      expect(cashBody.totals).toEqual([
+        { currency: 'USD', debits: '1500', credits: '0', balance: '1500' },
+      ]);
+
+      const revBal = await app.inject({
+        method: 'GET',
+        url: `/accounts/${revenueId}/balance`,
+        headers: { cookie },
+      });
+      const revBody = revBal.json() as {
+        normalBalance: string;
+        totals: Array<{ currency: string; balance: string }>;
+      };
+      expect(revBody.normalBalance).toBe('CREDIT');
+      expect(revBody.totals).toEqual([
+        { currency: 'USD', debits: '0', credits: '1500', balance: '1500' },
+      ]);
+    });
+
+    it('returns 404 for a balance of a missing account', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/11111111-1111-4111-8111-111111111111/balance',
+        headers: { cookie },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+  });
 });
