@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { HealthzModule } from './healthz/healthz.module.js';
 import { DatabaseModule } from './db/database.module.js';
 import { IdempotencyModule } from './idempotency/idempotency.module.js';
+import { JournalEntriesModule } from './journal-entries/journal-entries.module.js';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor.js';
 import { REDACT_PATHS } from './observability/redact-paths.js';
 import type { Env } from './config/env.js';
@@ -27,6 +28,7 @@ export class AppModule {
         AuthModule.forRoot(env),
         IdempotencyModule,
         AccountsModule,
+        JournalEntriesModule,
         HealthzModule,
       ],
       providers: [{ provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor }],

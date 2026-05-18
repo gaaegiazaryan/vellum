@@ -15,6 +15,7 @@ import { Idempotent } from '../idempotency/idempotency.decorator.js';
 import {
   AccountsService,
   createAccountSchema,
+  type AccountBalance,
   type AccountRow,
   type CreateAccountInput,
 } from './accounts.service.js';
@@ -47,5 +48,10 @@ export class AccountsController {
     const row = await this.accounts.findById(id);
     if (!row) throw new NotFoundException(`account ${id} not found`);
     return row;
+  }
+
+  @Get(':id/balance')
+  async balance(@Param('id') id: string): Promise<AccountBalance> {
+    return this.accounts.getBalance(id);
   }
 }
