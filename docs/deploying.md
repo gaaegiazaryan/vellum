@@ -45,6 +45,12 @@ Per ADR-0004, run this as a **pre-deploy release task**, not at process startup.
 
 Migrations are forward-only. There are no automatic down migrations. If a deploy goes wrong after a migration that broke compatibility, the recovery path is restoring from a recent PITR backup, not running `down` migrations against live data. Make sure your hosted Postgres has point-in-time recovery turned on before you start writing real data.
 
+After the first migration, seed the default chart of accounts so the web UI has something to pick from:
+
+    pnpm --filter @vellum/api db:seed
+
+The seed is idempotent (`ON CONFLICT (code) DO NOTHING`). Running it twice is safe; running it after you have customised the chart will only add new codes from the default set, not overwrite yours.
+
 4. Build and start
 
 ---

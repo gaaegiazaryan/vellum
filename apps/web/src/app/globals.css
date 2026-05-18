@@ -165,3 +165,97 @@ code {
     color: #ff7c70;
   }
 }
+
+main.ledger {
+  max-width: 52rem;
+}
+
+.ledger-header {
+  margin-bottom: 2rem;
+}
+
+.entries {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.entry {
+  border: 1px solid var(--code-bg);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.entry-head {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.entry-head time {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.entry-description {
+  flex: 1;
+}
+
+.entry-currency {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
+.entry-lines {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 5rem 7rem 1fr auto;
+  gap: 0.75rem;
+  padding: 0.15rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.line-side {
+  color: var(--fg-muted);
+}
+
+.line-debit .line-side {
+  color: #0a4bd0;
+}
+
+.line-credit .line-side {
+  color: #b8332a;
+}
+
+@media (prefers-color-scheme: dark) {
+  .line-debit .line-side {
+    color: #6fa8ff;
+  }
+  .line-credit .line-side {
+    color: #ff7c70;
+  }
+}
+
+.line-account {
+  color: var(--fg-muted);
+}
+
+.line-amount {
+  text-align: right;
+}
+
+.line-memo {
+  color: var(--fg-muted);
+  font-style: italic;
+}
