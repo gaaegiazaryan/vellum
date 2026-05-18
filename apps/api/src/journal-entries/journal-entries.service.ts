@@ -4,7 +4,7 @@ import {
   UnprocessableEntityException,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, exists, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   Money,
@@ -35,6 +35,43 @@ export const createJournalEntryInputSchema = z.object({
 });
 
 export type CreateJournalEntryInput = z.infer<typeof createJournalEntryInputSchema>;
+
+export interface ListEntriesOptions {
+  limit?: number;
+  cursor?: string;
+  accountId?: string;
+  after?: Date;
+  before?: Date;
+  currency?: string;
+}
+
+export interface ListEntriesResult {
+  entries: JournalEntryRow[];
+  nextCursor: string | null;
+}
+
+interface Cursor {
+  occurredAt: Date;
+  id: string;
+}
+
+function encodeCursor(c: Cursor): string {
+  return Buffer.from(JSON.stringify({ occurredAt: c.occurredAt.toISOString(), id: c.id })).toString(
+    'base64url',
+  );
+}
+
+function decodeCursor(raw: string): Cursor {
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as {
+      occurredAt: string;
+      id: string;
+    };
+    return { occurredAt: new Date(parsed.occurredAt), id: parsed.id };
+  } catch {
+    throw new Error('invalid cursor');
+  }
+}
 
 export interface JournalEntryRow {
   id: string;
@@ -150,6 +187,91 @@ export class JournalEntriesService {
         })),
       };
     });
+  }
+
+  async list(opts: ListEntriesOptions): Promise<ListEntriesResult> {
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    const conditions = [] as Array<ReturnType<typeof and>>;
+
+    if (opts.after) conditions.push(gte(journalEntries.occurredAt, opts.after));
+    if (opts.before) conditions.push(lte(journalEntries.occurredAt, opts.before));
+    if (opts.currency) conditions.push(eq(journalEntries.currency, opts.currency));
+    if (opts.accountId) {
+      conditions.push(
+        exists(
+          this.db
+            .select({ x: sql`1` })
+            .from(ledgerLines)
+            .where(
+              and(
+                eq(ledgerLines.journalEntryId, journalEntries.id),
+                eq(ledgerLines.accountId, opts.accountId),
+              ),
+            ),
+        ),
+      );
+    }
+    if (opts.cursor) {
+      const c = decodeCursor(opts.cursor);
+      conditions.push(
+        or(
+          sql`${journalEntries.occurredAt} < ${c.occurredAt.toISOString()}::timestamptz`,
+          and(eq(journalEntries.occurredAt, c.occurredAt), sql`${journalEntries.id} < ${c.id}`),
+        )!,
+      );
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const entryRows = await this.db
+      .select()
+      .from(journalEntries)
+      .where(where)
+      .orderBy(desc(journalEntries.occurredAt), desc(journalEntries.id))
+      .limit(limit + 1);
+
+    const hasNext = entryRows.length > limit;
+    const page = hasNext ? entryRows.slice(0, limit) : entryRows;
+
+    if (page.length === 0) {
+      return { entries: [], nextCursor: null };
+    }
+
+    const ids = page.map((e) => e.id);
+    const allLines = await this.db
+      .select()
+      .from(ledgerLines)
+      .where(inArray(ledgerLines.journalEntryId, ids))
+      .orderBy(ledgerLines.position);
+
+    const linesByEntry = new Map<string, JournalEntryRow['lines']>();
+    for (const line of allLines) {
+      const key = line.journalEntryId;
+      const arr = linesByEntry.get(key) ?? [];
+      arr.push({
+        id: line.id,
+        accountId: line.accountId,
+        side: line.side,
+        amount: line.amount.toString(),
+        memo: line.memo,
+        position: line.position,
+      });
+      linesByEntry.set(key, arr);
+    }
+
+    const entries: JournalEntryRow[] = page.map((entry) => ({
+      id: entry.id,
+      occurredAt: entry.occurredAt,
+      description: entry.description,
+      currency: entry.currency,
+      createdById: entry.createdById ?? null,
+      createdAt: entry.createdAt,
+      lines: linesByEntry.get(entry.id) ?? [],
+    }));
+
+    const last = page[page.length - 1]!;
+    const nextCursor = hasNext ? encodeCursor({ occurredAt: last.occurredAt, id: last.id }) : null;
+    return { entries, nextCursor };
   }
 
   async findById(id: string): Promise<JournalEntryRow | null> {
