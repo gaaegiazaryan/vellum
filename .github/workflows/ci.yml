@@ -6,9 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel old runs only on PR branches, where a newer push supersedes
+# the previous run. On main, every commit deserves its own full run:
+# rapid-succession squash-merges otherwise cancel each other and leave
+# main commits with cancelled CI badges that read as red x in the UI.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
