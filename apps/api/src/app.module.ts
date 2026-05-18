@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
+import { AccountsModule } from './accounts/accounts.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { HealthzModule } from './healthz/healthz.module.js';
 import { DatabaseModule } from './db/database.module.js';
@@ -25,6 +26,7 @@ export class AppModule {
         DatabaseModule.forRoot(env),
         AuthModule.forRoot(env),
         IdempotencyModule,
+        AccountsModule,
         HealthzModule,
       ],
       providers: [{ provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor }],
