@@ -167,6 +167,15 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
 
+  packages/extraction:
+    dependencies:
+      '@vellum/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+
 packages:
 
   '@auth/core@0.41.2':
