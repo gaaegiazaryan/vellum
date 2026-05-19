@@ -1,0 +1,17 @@
+{
+  "name": "@vellum/extraction",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vellum AI extraction pipeline: schemas, provider abstraction, cost tracking",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@vellum/core": "workspace:*",
+    "zod": "^4.0.0"
+  }
+}
