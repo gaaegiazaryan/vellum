@@ -11,6 +11,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@vellum/core": "workspace:*",
     "zod": "^4.0.0"
   }
