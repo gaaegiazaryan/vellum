@@ -82,4 +82,29 @@ describe('loadEnv', () => {
       expect((e as Error).message).toContain('PORT');
     }
   });
+
+  it('defaults EXTRACTION_PROVIDER to mock when unset', () => {
+    const env = loadEnv({ ...base });
+    expect(env.EXTRACTION_PROVIDER).toBe('mock');
+  });
+
+  it('accepts EXTRACTION_PROVIDER=anthropic with an api key', () => {
+    const env = loadEnv({
+      ...base,
+      EXTRACTION_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-ant-test',
+    });
+    expect(env.EXTRACTION_PROVIDER).toBe('anthropic');
+    expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-test');
+  });
+
+  it('rejects EXTRACTION_PROVIDER=anthropic without an api key', () => {
+    expect(() => loadEnv({ ...base, EXTRACTION_PROVIDER: 'anthropic' })).toThrow(
+      EnvValidationError,
+    );
+  });
+
+  it('rejects an unknown EXTRACTION_PROVIDER', () => {
+    expect(() => loadEnv({ ...base, EXTRACTION_PROVIDER: 'openai' })).toThrow(EnvValidationError);
+  });
 });
