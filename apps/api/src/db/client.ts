@@ -2,6 +2,7 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as authSchema from './schema/auth.js';
 import * as credentialsSchema from './schema/credentials.js';
+import * as extractionsSchema from './schema/extractions.js';
 import * as idempotencySchema from './schema/idempotency.js';
 import * as ledgerSchema from './schema/ledger.js';
 import * as uploadsSchema from './schema/uploads.js';
@@ -9,6 +10,7 @@ import * as uploadsSchema from './schema/uploads.js';
 const schema = {
   ...authSchema,
   ...credentialsSchema,
+  ...extractionsSchema,
   ...idempotencySchema,
   ...ledgerSchema,
   ...uploadsSchema,
