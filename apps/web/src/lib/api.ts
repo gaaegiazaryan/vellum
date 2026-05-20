@@ -16,6 +16,7 @@ const DEFAULT_BASE = 'http://localhost:3001';
 export interface ApiClient {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body: unknown, idempotencyKey: string): Promise<T>;
+  postMultipart<T>(path: string, formData: FormData): Promise<T>;
 }
 
 export async function apiClient(): Promise<ApiClient> {
@@ -56,6 +57,18 @@ export async function apiClient(): Promise<ApiClient> {
           'idempotency-key': idempotencyKey,
         }),
         body: JSON.stringify(body),
+        cache: 'no-store',
+      });
+      return handle<T>(res);
+    },
+    async postMultipart<T>(path: string, formData: FormData): Promise<T> {
+      // No content-type header here; fetch sets multipart/form-data with
+      // the right boundary when body is a FormData. Setting it manually
+      // breaks the boundary.
+      const res = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: buildHeaders(),
+        body: formData,
         cache: 'no-store',
       });
       return handle<T>(res);
