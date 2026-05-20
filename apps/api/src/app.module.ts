@@ -8,6 +8,7 @@ import { DatabaseModule } from './db/database.module.js';
 import { IdempotencyModule } from './idempotency/idempotency.module.js';
 import { JournalEntriesModule } from './journal-entries/journal-entries.module.js';
 import { UploadsModule } from './uploads/uploads.module.js';
+import { ExtractionsModule } from './extractions/extractions.module.js';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor.js';
 import { REDACT_PATHS } from './observability/redact-paths.js';
 import type { Env } from './config/env.js';
@@ -31,6 +32,7 @@ export class AppModule {
         AccountsModule,
         JournalEntriesModule,
         UploadsModule.forRoot(env),
+        ExtractionsModule.forRoot(env),
         HealthzModule,
       ],
       providers: [{ provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor }],
