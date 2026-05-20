@@ -15,6 +15,12 @@ const envSchema = z
       }),
     AUTH_SECRET: z.string().min(32, 'AUTH_SECRET must be at least 32 characters'),
     UPLOAD_DIR: z.string().default('/tmp/vellum-uploads'),
+    EXTRACTION_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  })
+  .refine((env) => env.EXTRACTION_PROVIDER !== 'anthropic' || Boolean(env.ANTHROPIC_API_KEY), {
+    message: 'EXTRACTION_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set',
+    path: ['ANTHROPIC_API_KEY'],
   })
   .transform((env) => ({
     ...env,

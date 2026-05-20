@@ -19,15 +19,18 @@ Vellum is pre-alpha. The deployment story below works, but expect rough edges; i
 
 A copy of these lives in `.env.example` at the repo root. Set every variable below in the deploy environment of both the web and the api services.
 
-| Variable       | Required | Used by  | Notes                                                                                                                                   |
-| -------------- | -------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL` | yes      | web, api | `postgres://user:pass@host:port/db`. Same value on both services.                                                                       |
-| `AUTH_SECRET`  | yes      | web, api | At least 32 random bytes. Encrypts the session JWE on web; the api uses it to decrypt the same cookie. **Same value on both services.** |
-| `AUTH_URL`     | optional | web      | Public base URL of the web app. Auth.js auto-detects on most hosts.                                                                     |
-| `REDIS_URL`    | yes      | api      | `redis://host:port/db`. Used by BullMQ and the pub/sub fanout.                                                                          |
-| `PORT`         | optional | api      | Defaults to `3001`. Set whatever your platform expects.                                                                                 |
-| `NODE_ENV`     | yes      | web, api | `production` in prod. Switches log format and tightens defaults.                                                                        |
-| `LOG_LEVEL`    | optional | api      | `info` by default in prod, `debug` in dev.                                                                                              |
+| Variable              | Required    | Used by  | Notes                                                                                                                                   |
+| --------------------- | ----------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`        | yes         | web, api | `postgres://user:pass@host:port/db`. Same value on both services.                                                                       |
+| `AUTH_SECRET`         | yes         | web, api | At least 32 random bytes. Encrypts the session JWE on web; the api uses it to decrypt the same cookie. **Same value on both services.** |
+| `AUTH_URL`            | optional    | web      | Public base URL of the web app. Auth.js auto-detects on most hosts.                                                                     |
+| `REDIS_URL`           | yes         | api      | `redis://host:port/db`. Used by BullMQ and the pub/sub fanout.                                                                          |
+| `PORT`                | optional    | api      | Defaults to `3001`. Set whatever your platform expects.                                                                                 |
+| `NODE_ENV`            | yes         | web, api | `production` in prod. Switches log format and tightens defaults.                                                                        |
+| `LOG_LEVEL`           | optional    | api      | `info` by default in prod, `debug` in dev.                                                                                              |
+| `UPLOAD_DIR`          | optional    | api      | Directory the api writes uploaded receipts to. Defaults to `/tmp/vellum-uploads`. Swap UploadsModule storage binding to S3 in prod.     |
+| `EXTRACTION_PROVIDER` | optional    | api      | `mock` (default) or `anthropic`. Mock skips API calls; anthropic requires `ANTHROPIC_API_KEY`.                                          |
+| `ANTHROPIC_API_KEY`   | conditional | api      | Required when `EXTRACTION_PROVIDER=anthropic`. Get one from anthropic.com.                                                              |
 
 Generate `AUTH_SECRET` once and treat it like a database password:
 
