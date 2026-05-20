@@ -18,6 +18,7 @@
     "@auth/core": "^0.41.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
+    "@fastify/multipart": "^9.0.0",
     "@nestjs/platform-fastify": "^11.0.0",
     "@vellum/core": "workspace:*",
     "drizzle-orm": "^0.36.0",
