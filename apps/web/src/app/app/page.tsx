@@ -59,6 +59,8 @@ export default async function AppHome() {
         <p className="muted">
           Signed in as {session.user?.email ?? 'unknown'}.{' '}
           <Link href="/app/entries/new">+ new entry</Link>
+          {' · '}
+          <Link href="/app/uploads">upload receipt</Link>
         </p>
       </header>
 
