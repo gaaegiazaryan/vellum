@@ -4,8 +4,15 @@ import * as authSchema from './schema/auth.js';
 import * as credentialsSchema from './schema/credentials.js';
 import * as idempotencySchema from './schema/idempotency.js';
 import * as ledgerSchema from './schema/ledger.js';
+import * as uploadsSchema from './schema/uploads.js';
 
-const schema = { ...authSchema, ...credentialsSchema, ...idempotencySchema, ...ledgerSchema };
+const schema = {
+  ...authSchema,
+  ...credentialsSchema,
+  ...idempotencySchema,
+  ...ledgerSchema,
+  ...uploadsSchema,
+};
 
 export type Db = PostgresJsDatabase<typeof schema>;
 
