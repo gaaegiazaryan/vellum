@@ -71,6 +71,9 @@ importers:
       '@vellum/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@vellum/extraction':
+        specifier: workspace:*
+        version: link:../../packages/extraction
       drizzle-orm:
         specifier: ^0.36.0
         version: 0.36.4(@types/react@19.2.14)(postgres@3.4.9)(react@19.2.6)
