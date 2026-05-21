@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState } from 'react';
+import Link from 'next/link';
 import { uploadAndExtractAction, type UploadActionState } from './actions';
 
 const INITIAL: UploadActionState = {};
@@ -27,9 +28,9 @@ export function UploadForm() {
 
       {state.lastExtractionId ? (
         <p className="muted">
-          Extracted. Upload <code>{state.lastUploadId?.slice(0, 8)}</code>, extraction{' '}
-          <code>{state.lastExtractionId.slice(0, 8)}</code>. The receipt-review UI lands in a
-          follow-up; for now the extraction row is in the database with the parsed receipt jsonb.
+          Extracted from upload <code>{state.lastUploadId?.slice(0, 8)}</code>.{' '}
+          <Link href={`/app/extractions/${state.lastExtractionId}`}>review and confirm</Link> to
+          turn it into a journal entry.
         </p>
       ) : null}
     </form>
