@@ -1,9 +1,17 @@
 import { createHash } from 'node:crypto';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
-import { ExtractionError, type ExtractionProvider } from '@vellum/extraction';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { ExtractionError, receiptSchema, type ExtractionProvider } from '@vellum/extraction';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
 import { extractions } from '../db/schema/extractions.js';
+import { accounts, journalEntries, ledgerLines } from '../db/schema/ledger.js';
 import { UploadsService } from '../uploads/uploads.service.js';
 
 export const EXTRACTION_PROVIDER = Symbol('EXTRACTION_PROVIDER');
@@ -29,6 +37,25 @@ export interface ExtractionRow {
   createdById: string | null;
   createdAt: Date;
   completedAt: Date | null;
+  journalEntryId: string | null;
+  confirmedById: string | null;
+  confirmedAt: Date | null;
+}
+
+export interface ConfirmExtractionInput {
+  debitAccountId: string;
+  creditAccountId: string;
+  description?: string;
+}
+
+export interface ConfirmExtractionResult {
+  extraction: ExtractionRow;
+  journalEntry: {
+    id: string;
+    occurredAt: Date;
+    description: string;
+    currency: string;
+  };
 }
 
 @Injectable()
@@ -144,6 +171,133 @@ export class ExtractionsService {
       .orderBy(desc(extractions.createdAt));
     return rows.map(rowFromDb);
   }
+
+  /**
+   * Turn a confirmed extraction into a ledger entry. The receipt total
+   * becomes a single two-line balanced entry: debit the chosen expense
+   * account, credit the chosen payment account (ADR-0006). The human
+   * picks both accounts; the image cannot.
+   *
+   * Everything runs in one transaction with the extraction row locked
+   * FOR UPDATE, so two concurrent confirms cannot both post an entry.
+   * Balance holds by construction (two equal lines, one currency); the
+   * per-entry balance trigger is the backstop, so this path does not
+   * re-run assertBalanced.
+   */
+  async confirm(
+    extractionId: string,
+    input: ConfirmExtractionInput,
+    userId: string | null,
+  ): Promise<ConfirmExtractionResult> {
+    if (input.debitAccountId === input.creditAccountId) {
+      throw new BadRequestException({
+        error: 'same_account',
+        message: 'debit and credit accounts must differ',
+      });
+    }
+
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(extractions)
+        .where(eq(extractions.id, extractionId))
+        .for('update')
+        .limit(1);
+      if (!row) throw new NotFoundException(`extraction ${extractionId} not found`);
+
+      if (row.journalEntryId) {
+        throw new ConflictException({
+          error: 'already_confirmed',
+          message: `extraction ${extractionId} is already linked to a journal entry`,
+          journalEntryId: row.journalEntryId,
+        });
+      }
+      if (row.status !== 'succeeded' && row.status !== 'needs_review') {
+        throw new UnprocessableEntityException({
+          error: 'not_confirmable',
+          message: `status ${row.status} cannot be confirmed; only succeeded or needs_review can`,
+        });
+      }
+      if (!row.receipt) {
+        throw new UnprocessableEntityException({
+          error: 'no_receipt',
+          message: 'extraction has no parsed receipt to confirm',
+        });
+      }
+
+      const receipt = receiptSchema.parse(row.receipt);
+      const total = BigInt(receipt.totalMinor);
+      if (total <= 0n) {
+        throw new UnprocessableEntityException({
+          error: 'non_positive_total',
+          message: 'receipt total must be positive to post a journal entry',
+        });
+      }
+
+      const accountIds = [input.debitAccountId, input.creditAccountId];
+      const found = await tx
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(inArray(accounts.id, accountIds));
+      if (found.length !== accountIds.length) {
+        const missing = accountIds.filter((id) => !found.some((f) => f.id === id));
+        throw new NotFoundException({
+          error: 'account_not_found',
+          message: 'one or more accountId fields point at accounts that do not exist',
+          missing,
+        });
+      }
+
+      const description = input.description?.trim() || receipt.vendor.name;
+
+      const [entry] = await tx
+        .insert(journalEntries)
+        .values({
+          occurredAt: receipt.occurredAt,
+          description,
+          currency: receipt.currency,
+          createdById: userId,
+        })
+        .returning();
+      if (!entry) throw new Error('failed to insert journal_entries row');
+
+      await tx.insert(ledgerLines).values([
+        {
+          journalEntryId: entry.id,
+          accountId: input.debitAccountId,
+          side: 'DEBIT',
+          amount: total,
+          memo: null,
+          position: 0,
+        },
+        {
+          journalEntryId: entry.id,
+          accountId: input.creditAccountId,
+          side: 'CREDIT',
+          amount: total,
+          memo: null,
+          position: 1,
+        },
+      ]);
+
+      const [updated] = await tx
+        .update(extractions)
+        .set({ journalEntryId: entry.id, confirmedById: userId, confirmedAt: new Date() })
+        .where(eq(extractions.id, extractionId))
+        .returning();
+      if (!updated) throw new Error('failed to link extraction to journal entry');
+
+      return {
+        extraction: rowFromDb(updated),
+        journalEntry: {
+          id: entry.id,
+          occurredAt: entry.occurredAt,
+          description: entry.description,
+          currency: entry.currency,
+        },
+      };
+    });
+  }
 }
 
 function rowFromDb(r: typeof extractions.$inferSelect): ExtractionRow {
@@ -166,6 +320,9 @@ function rowFromDb(r: typeof extractions.$inferSelect): ExtractionRow {
     createdById: r.createdById,
     createdAt: r.createdAt,
     completedAt: r.completedAt,
+    journalEntryId: r.journalEntryId,
+    confirmedById: r.confirmedById,
+    confirmedAt: r.confirmedAt,
   };
 }
 

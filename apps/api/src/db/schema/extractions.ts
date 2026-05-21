@@ -68,11 +68,15 @@ export const extractions = pgTable(
     createdById: text('created_by_id'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    journalEntryId: text('journal_entry_id'),
+    confirmedById: text('confirmed_by_id'),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true, mode: 'date' }),
   },
   (table) => [
     index('extractions_upload_idx').on(table.uploadId),
     index('extractions_created_by_idx').on(table.createdById),
     index('extractions_status_idx').on(table.status),
+    index('extractions_journal_entry_idx').on(table.journalEntryId),
   ],
 );
 

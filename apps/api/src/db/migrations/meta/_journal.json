@@ -50,6 +50,13 @@
       "when": 1779178900000,
       "tag": "0006_extractions",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779342016486,
+      "tag": "0007_extraction_confirm",
+      "breakpoints": true
     }
   ]
 }
