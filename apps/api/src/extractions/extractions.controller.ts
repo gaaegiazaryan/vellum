@@ -14,10 +14,20 @@ import { z } from 'zod';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { Idempotent } from '../idempotency/idempotency.decorator.js';
-import { ExtractionsService, type ExtractionRow } from './extractions.service.js';
+import {
+  ExtractionsService,
+  type ConfirmExtractionResult,
+  type ExtractionRow,
+} from './extractions.service.js';
 
 const createExtractionSchema = z.object({
   uploadId: z.string().uuid(),
+});
+
+const confirmExtractionSchema = z.object({
+  debitAccountId: z.string().uuid(),
+  creditAccountId: z.string().uuid(),
+  description: z.string().trim().min(1).max(500).optional(),
 });
 
 @Controller('extractions')
@@ -43,6 +53,24 @@ export class ExtractionsController {
       uploadId: parsed.data.uploadId,
       userId: user?.id ?? null,
     });
+  }
+
+  @Post(':id/confirm')
+  @Idempotent()
+  @HttpCode(HttpStatus.CREATED)
+  async confirm(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: AuthenticatedUser | undefined,
+  ): Promise<ConfirmExtractionResult> {
+    const parsed = confirmExtractionSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        error: 'validation_failed',
+        issues: parsed.error.issues,
+      });
+    }
+    return this.extractions.confirm(id, parsed.data, user?.id ?? null);
   }
 
   @Get(':id')

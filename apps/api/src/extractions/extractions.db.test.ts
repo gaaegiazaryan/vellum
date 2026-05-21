@@ -26,6 +26,8 @@ import { IdempotencyInterceptor } from '../idempotency/idempotency.interceptor.j
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = resolve(__dirname, '../db/migrations');
 const SECRET = 'test-secret-thirty-two-characters-long-aaaa';
+const EXPENSE_ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
+const CASH_ACCOUNT_ID = '33333333-3333-4333-8333-333333333333';
 
 const sampleReceipt = receiptSchema.parse({
   vendor: { name: 'Blue Bottle' },
@@ -84,6 +86,11 @@ describe('ExtractionsController POST /extractions (integration)', () => {
     const db = drizzle(sql);
     await migrate(db, { migrationsFolder });
     await sql`INSERT INTO users (id, email) VALUES ('usr_test', 'test@example.com')`;
+    await sql`
+      INSERT INTO accounts (id, code, name, type) VALUES
+        (${EXPENSE_ACCOUNT_ID}, '5000', 'Office Supplies', 'EXPENSE'),
+        (${CASH_ACCOUNT_ID}, '1000', 'Cash', 'ASSET')
+    `;
 
     const storageDir = await mkdtemp(join(tmpdir(), 'vellum-extractions-test-'));
     provider = new MockProvider();
@@ -199,5 +206,136 @@ describe('ExtractionsController POST /extractions (integration)', () => {
     const res = await post({ uploadId: upload.id }, `idem-fail-${Math.random()}`);
     expect(res.statusCode).toBe(400);
     expect((res.json() as { error: string }).error).toBe('extraction_failed');
+  });
+
+  function confirmPost(id: string, body: Record<string, unknown>, key: string) {
+    return app.inject({
+      method: 'POST',
+      url: `/extractions/${id}/confirm`,
+      headers: { cookie, 'idempotency-key': key, 'content-type': 'application/json' },
+      payload: body,
+    });
+  }
+
+  async function createSucceededExtraction(seed: string): Promise<string> {
+    const upload = await stageUploadWithFixture(seed);
+    const res = await post({ uploadId: upload.id }, `idem-seed-${seed}`);
+    expect(res.statusCode).toBe(201);
+    return (res.json() as { id: string }).id;
+  }
+
+  it('confirms a succeeded extraction into a balanced journal entry', async () => {
+    const id = await createSucceededExtraction(`confirm-${Math.random()}`);
+    const res = await confirmPost(
+      id,
+      { debitAccountId: EXPENSE_ACCOUNT_ID, creditAccountId: CASH_ACCOUNT_ID },
+      `idem-confirm-${Math.random()}`,
+    );
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as {
+      extraction: { id: string; journalEntryId: string | null; confirmedAt: string | null };
+      journalEntry: { id: string; description: string; currency: string };
+    };
+    expect(body.journalEntry.description).toBe('Blue Bottle');
+    expect(body.journalEntry.currency).toBe('USD');
+    expect(body.extraction.journalEntryId).toBe(body.journalEntry.id);
+    expect(body.extraction.confirmedAt).not.toBeNull();
+
+    const lines = await sql`
+      SELECT side, amount FROM ledger_lines
+      WHERE journal_entry_id = ${body.journalEntry.id}
+      ORDER BY position
+    `;
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ side: 'DEBIT', amount: '979' });
+    expect(lines[1]).toMatchObject({ side: 'CREDIT', amount: '979' });
+  });
+
+  it('uses a custom description when provided', async () => {
+    const id = await createSucceededExtraction(`confirm-desc-${Math.random()}`);
+    const res = await confirmPost(
+      id,
+      {
+        debitAccountId: EXPENSE_ACCOUNT_ID,
+        creditAccountId: CASH_ACCOUNT_ID,
+        description: 'Team coffee run',
+      },
+      `idem-confirm-desc-${Math.random()}`,
+    );
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as { journalEntry: { description: string } }).journalEntry.description).toBe(
+      'Team coffee run',
+    );
+  });
+
+  it('rejects confirming the same extraction twice', async () => {
+    const id = await createSucceededExtraction(`confirm-twice-${Math.random()}`);
+    const first = await confirmPost(
+      id,
+      { debitAccountId: EXPENSE_ACCOUNT_ID, creditAccountId: CASH_ACCOUNT_ID },
+      `idem-twice-a-${Math.random()}`,
+    );
+    expect(first.statusCode).toBe(201);
+
+    const second = await confirmPost(
+      id,
+      { debitAccountId: EXPENSE_ACCOUNT_ID, creditAccountId: CASH_ACCOUNT_ID },
+      `idem-twice-b-${Math.random()}`,
+    );
+    expect(second.statusCode).toBe(409);
+    expect((second.json() as { error: string }).error).toBe('already_confirmed');
+  });
+
+  it('rejects equal debit and credit accounts', async () => {
+    const id = await createSucceededExtraction(`confirm-same-${Math.random()}`);
+    const res = await confirmPost(
+      id,
+      { debitAccountId: EXPENSE_ACCOUNT_ID, creditAccountId: EXPENSE_ACCOUNT_ID },
+      `idem-same-${Math.random()}`,
+    );
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toBe('same_account');
+  });
+
+  it('returns 404 confirming an unknown extraction id', async () => {
+    const res = await confirmPost(
+      '44444444-4444-4444-8444-444444444444',
+      { debitAccountId: EXPENSE_ACCOUNT_ID, creditAccountId: CASH_ACCOUNT_ID },
+      `idem-unknown-${Math.random()}`,
+    );
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 404 when an account does not exist', async () => {
+    const id = await createSucceededExtraction(`confirm-noacct-${Math.random()}`);
+    const res = await confirmPost(
+      id,
+      {
+        debitAccountId: EXPENSE_ACCOUNT_ID,
+        creditAccountId: '55555555-5555-4555-8555-555555555555',
+      },
+      `idem-noacct-${Math.random()}`,
+    );
+    expect(res.statusCode).toBe(404);
+    expect((res.json() as { error: string }).error).toBe('account_not_found');
+  });
+
+  it('refuses to confirm a failed extraction', async () => {
+    const upload = await uploadsService.create({
+      buffer: Buffer.from(`confirm-failed-${Math.random()}`),
+      mimeType: 'image/png',
+      userId: 'usr_test',
+    });
+    const failed = await post({ uploadId: upload.id }, `idem-failrec-${Math.random()}`);
+    expect(failed.statusCode).toBe(400);
+    const failedId = (failed.json() as { extractionId: string }).extractionId;
+
+    const res = await confirmPost(
+      failedId,
+      { debitAccountId: EXPENSE_ACCOUNT_ID, creditAccountId: CASH_ACCOUNT_ID },
+      `idem-confirm-failed-${Math.random()}`,
+    );
+    expect(res.statusCode).toBe(422);
+    expect((res.json() as { error: string }).error).toBe('not_confirmable');
   });
 });
