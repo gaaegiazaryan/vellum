@@ -4,6 +4,8 @@ import { AnthropicProvider } from '@vellum/extraction/providers/anthropic';
 import type { ExtractionProvider } from '@vellum/extraction';
 import { ExtractionsController } from './extractions.controller.js';
 import { ExtractionsService, EXTRACTION_PROVIDER } from './extractions.service.js';
+import { ExtractionWorker } from './extraction.worker.js';
+import { QueueModule } from '../queue/queue.module.js';
 import { UploadsModule } from '../uploads/uploads.module.js';
 import type { Env } from '../config/env.js';
 
@@ -24,11 +26,12 @@ export class ExtractionsModule {
   static forRoot(env: Env): DynamicModule {
     return {
       module: ExtractionsModule,
-      imports: [UploadsModule.forRoot(env)],
+      imports: [UploadsModule.forRoot(env), QueueModule.forRoot(env)],
       controllers: [ExtractionsController],
       providers: [
         { provide: EXTRACTION_PROVIDER, useValue: pickProvider(env) },
         ExtractionsService,
+        ExtractionWorker,
       ],
       exports: [ExtractionsService, EXTRACTION_PROVIDER],
     };

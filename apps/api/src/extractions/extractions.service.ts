@@ -8,13 +8,33 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { ExtractionError, receiptSchema, type ExtractionProvider } from '@vellum/extraction';
+import { Queue } from 'bullmq';
+import {
+  ExtractionError,
+  ProviderTimeoutError,
+  receiptSchema,
+  type ExtractionProvider,
+} from '@vellum/extraction';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
 import { extractions } from '../db/schema/extractions.js';
 import { accounts, journalEntries, ledgerLines } from '../db/schema/ledger.js';
+import { EXTRACTION_QUEUE, type ExtractionJobData } from '../queue/queue.module.js';
 import { UploadsService } from '../uploads/uploads.service.js';
 
 export const EXTRACTION_PROVIDER = Symbol('EXTRACTION_PROVIDER');
+
+/**
+ * Whether a failed extraction is worth retrying. Deterministic
+ * failures (the model could not read the image, returned junk, or the
+ * budget is blown) fail identically on retry and each attempt costs
+ * money, so they are not retried. Timeouts and unclassified errors get
+ * a bounded retry.
+ */
+export function isRetryableExtractionError(err: unknown): boolean {
+  if (err instanceof ProviderTimeoutError) return true;
+  if (err instanceof ExtractionError) return false;
+  return true;
+}
 
 const CONFIDENCE_REVIEW_THRESHOLD = 0.7;
 
@@ -63,20 +83,20 @@ export class ExtractionsService {
   constructor(
     @Inject(DATABASE_TOKEN) private readonly db: Db,
     @Inject(EXTRACTION_PROVIDER) private readonly provider: ExtractionProvider,
+    @Inject(EXTRACTION_QUEUE) private readonly queue: Queue,
     private readonly uploadsService: UploadsService,
   ) {}
 
   /**
-   * Create an extraction for a given upload. Synchronous v1: the
-   * handler waits for the provider, persists the result, returns the
-   * row. Async via BullMQ worker is the next step when latency or
-   * batch cost becomes a real problem.
+   * Accept an extraction request: insert a pending row and enqueue a
+   * job, then return immediately (ADR-0007). The vision call runs in
+   * the worker, not here.
    *
-   * Idempotency by request hash. request_hash = sha256(uploadId +
-   * provider.name + provider.model). If a row already exists with
-   * this hash, return it instead of re-running the model. This is the
-   * cheapest reasonable dedupe; richer prompt + image hash dedupe
-   * lives in a follow-up.
+   * Dedupe by request hash = sha256(uploadId + provider.name +
+   * provider.model). A non-failed row for the same hash (pending or
+   * terminal) is returned as-is rather than enqueuing a duplicate; a
+   * previously failed row is allowed to be retried with a fresh job.
+   * The job id is the row id, so the queue itself rejects duplicates.
    */
   async create(args: { uploadId: string; userId: string | null }): Promise<ExtractionRow> {
     const upload = await this.uploadsService.findById(args.uploadId);
@@ -95,54 +115,66 @@ export class ExtractionsService {
       .orderBy(desc(extractions.createdAt))
       .limit(1);
 
-    if (existing && (existing.status === 'succeeded' || existing.status === 'needs_review')) {
+    if (existing && existing.status !== 'failed') {
       return rowFromDb(existing);
     }
-
-    const buffer = await this.uploadsService.getBytes(upload.id);
-    const imageBase64 = buffer.toString('base64');
-
-    let result;
-    try {
-      result = await this.provider.extract({
-        imageBase64,
-        mimeType: upload.mimeType as 'image/png' | 'image/jpeg' | 'image/webp',
-      });
-    } catch (err) {
-      const [failed] = await this.db
-        .insert(extractions)
-        .values({
-          uploadId: upload.id,
-          provider: this.provider.name,
-          model: this.provider.model,
-          promptVersion: 'unknown',
-          requestHash,
-          status: 'failed',
-          errorCode: err instanceof ExtractionError ? err.name : 'unknown_error',
-          errorMessage: err instanceof Error ? err.message : String(err),
-          createdById: args.userId,
-          completedAt: new Date(),
-        })
-        .returning();
-      if (!failed) throw new Error('failed to record extraction failure');
-      throw new BadRequestException({
-        error: 'extraction_failed',
-        code: err instanceof ExtractionError ? err.name : 'unknown_error',
-        message: err instanceof Error ? err.message : String(err),
-        extractionId: failed.id,
-      });
-    }
-
-    const status = result.confidence >= CONFIDENCE_REVIEW_THRESHOLD ? 'succeeded' : 'needs_review';
 
     const [row] = await this.db
       .insert(extractions)
       .values({
         uploadId: upload.id,
-        provider: result.provider,
-        model: result.model,
+        provider: this.provider.name,
+        model: this.provider.model,
         promptVersion: 'unknown',
         requestHash,
+        status: 'pending',
+        createdById: args.userId,
+      })
+      .returning();
+    if (!row) throw new Error('failed to insert pending extraction row');
+
+    await this.queue.add('extract', { extractionId: row.id } satisfies ExtractionJobData, {
+      jobId: row.id,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 1000 },
+      removeOnComplete: true,
+      removeOnFail: false,
+    });
+
+    return rowFromDb(row);
+  }
+
+  /**
+   * Run the provider for a pending extraction and persist the result.
+   * Called by the worker. Idempotent: a row that already left pending
+   * is a no-op (a retry that lands after a prior success). Throws on
+   * provider failure so the worker can apply the retry policy; the
+   * worker calls recordFailure when it gives up.
+   */
+  async runExtraction(extractionId: string): Promise<void> {
+    const [row] = await this.db
+      .select()
+      .from(extractions)
+      .where(eq(extractions.id, extractionId))
+      .limit(1);
+    if (!row) throw new Error(`extraction ${extractionId} not found`);
+    if (row.status !== 'pending') return;
+
+    const upload = await this.uploadsService.findById(row.uploadId);
+    if (!upload) throw new Error(`upload ${row.uploadId} for extraction ${extractionId} not found`);
+
+    const buffer = await this.uploadsService.getBytes(upload.id);
+    const result = await this.provider.extract({
+      imageBase64: buffer.toString('base64'),
+      mimeType: upload.mimeType as 'image/png' | 'image/jpeg' | 'image/webp',
+    });
+
+    const status = result.confidence >= CONFIDENCE_REVIEW_THRESHOLD ? 'succeeded' : 'needs_review';
+    await this.db
+      .update(extractions)
+      .set({
+        provider: result.provider,
+        model: result.model,
         responseHash: result.rawResponseHash ?? null,
         costInputTokens: result.cost.inputTokens,
         costOutputTokens: result.cost.outputTokens,
@@ -150,12 +182,27 @@ export class ExtractionsService {
         confidence: result.confidence.toFixed(3),
         status,
         receipt: result.receipt,
-        createdById: args.userId,
         completedAt: result.extractedAt,
       })
-      .returning();
-    if (!row) throw new Error('failed to insert extraction row');
-    return rowFromDb(row);
+      .where(eq(extractions.id, extractionId));
+  }
+
+  /**
+   * Mark an extraction failed. Called by the worker when it gives up
+   * (non-retryable error, or attempts exhausted). The error code comes
+   * from the ExtractionError taxonomy when available so the audit trail
+   * shows what the model did.
+   */
+  async recordFailure(extractionId: string, err: unknown): Promise<void> {
+    await this.db
+      .update(extractions)
+      .set({
+        status: 'failed',
+        errorCode: err instanceof ExtractionError ? err.name : 'unknown_error',
+        errorMessage: err instanceof Error ? err.message : String(err),
+        completedAt: new Date(),
+      })
+      .where(eq(extractions.id, extractionId));
   }
 
   async findById(id: string): Promise<ExtractionRow | null> {

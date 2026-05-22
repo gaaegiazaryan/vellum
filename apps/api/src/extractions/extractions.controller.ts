@@ -37,7 +37,7 @@ export class ExtractionsController {
 
   @Post()
   @Idempotent()
-  @HttpCode(HttpStatus.CREATED)
+  @HttpCode(HttpStatus.ACCEPTED)
   async create(
     @Body() body: unknown,
     @CurrentUser() user: AuthenticatedUser | undefined,

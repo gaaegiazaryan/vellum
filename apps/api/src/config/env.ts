@@ -14,6 +14,12 @@ const envSchema = z
         message: 'DATABASE_URL must be a postgres:// or postgresql:// connection string',
       }),
     AUTH_SECRET: z.string().min(32, 'AUTH_SECRET must be at least 32 characters'),
+    REDIS_URL: z
+      .string()
+      .refine((u) => u.startsWith('redis://') || u.startsWith('rediss://'), {
+        message: 'REDIS_URL must be a redis:// or rediss:// connection string',
+      })
+      .default('redis://localhost:6379/0'),
     UPLOAD_DIR: z.string().default('/tmp/vellum-uploads'),
     EXTRACTION_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
