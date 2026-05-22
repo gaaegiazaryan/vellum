@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient, ApiError } from '@/lib/api';
 import { ConfirmForm, type AccountOption } from './confirm-form';
+import { AutoRefresh } from './auto-refresh';
 
 export const metadata = {
   title: 'Review extraction - Vellum',
@@ -83,6 +84,21 @@ export default async function ReviewExtractionPage({
             <Link href="/app">back to ledger</Link>
           </p>
         </header>
+      </main>
+    );
+  }
+
+  if (extraction.status === 'pending') {
+    return (
+      <main className="ledger">
+        <header className="ledger-header">
+          <h1>Extracting...</h1>
+          <p className="muted">
+            The model is reading this receipt. This page updates itself when it is done.{' '}
+            <Link href="/app/uploads">back to uploads</Link>
+          </p>
+        </header>
+        <AutoRefresh />
       </main>
     );
   }
