@@ -24,6 +24,10 @@ async function bootstrap(): Promise<void> {
     },
   });
 
+  // So the extraction worker and db pool close on SIGTERM/SIGINT
+  // instead of being killed mid-job.
+  app.enableShutdownHooks();
+
   await app.listen(env.PORT, '0.0.0.0');
 }
 

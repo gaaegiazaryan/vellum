@@ -4,6 +4,8 @@ import { Global, Module, type DynamicModule } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { GenericContainer, type StartedTestContainer } from 'testcontainers';
+import { Queue } from 'bullmq';
 import postgres from 'postgres';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -16,6 +18,13 @@ import { receiptSchema } from '@vellum/extraction';
 import { MockProvider } from '@vellum/extraction/providers/mock';
 import { ExtractionsController } from './extractions.controller.js';
 import { ExtractionsService, EXTRACTION_PROVIDER } from './extractions.service.js';
+import { ExtractionWorker } from './extraction.worker.js';
+import {
+  EXTRACTION_QUEUE,
+  EXTRACTION_QUEUE_NAME,
+  QUEUE_REDIS_URL,
+  createRedisConnection,
+} from '../queue/queue.module.js';
 import { UploadsService } from '../uploads/uploads.service.js';
 import { FilesystemStorage, OBJECT_STORAGE } from '../uploads/storage.js';
 import { DATABASE_TOKEN, DB_HANDLE_TOKEN } from '../db/database.module.js';
@@ -47,6 +56,8 @@ class TestInfraModule {
     db: PostgresJsDatabase,
     storageDir: string,
     provider: MockProvider,
+    redisUrl: string,
+    queue: Queue,
   ): DynamicModule {
     return {
       module: TestInfraModule,
@@ -57,9 +68,12 @@ class TestInfraModule {
         { provide: AUTH_SECRET_TOKEN, useValue: SECRET },
         { provide: OBJECT_STORAGE, useValue: new FilesystemStorage(storageDir) },
         { provide: EXTRACTION_PROVIDER, useValue: provider },
+        { provide: EXTRACTION_QUEUE, useValue: queue },
+        { provide: QUEUE_REDIS_URL, useValue: redisUrl },
         AuthGuard,
         UploadsService,
         ExtractionsService,
+        ExtractionWorker,
         IdempotencyService,
         { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
       ],
@@ -68,8 +82,22 @@ class TestInfraModule {
   }
 }
 
+interface ExtractionBody {
+  id: string;
+  uploadId: string;
+  provider: string;
+  status: 'pending' | 'succeeded' | 'failed' | 'needs_review';
+  confidence: string | null;
+  receipt: { vendor: { name: string }; totalMinor: string } | null;
+  costEstimatedUsd: string;
+  errorCode: string | null;
+}
+
 describe('ExtractionsController POST /extractions (integration)', () => {
   let container: StartedPostgreSqlContainer;
+  let redis: StartedTestContainer;
+  let queue: Queue;
+  let queueConnection: ReturnType<typeof createRedisConnection>;
   let sql: ReturnType<typeof postgres>;
   let app: NestFastifyApplication;
   let provider: MockProvider;
@@ -82,6 +110,9 @@ describe('ExtractionsController POST /extractions (integration)', () => {
       .withUsername('vellum')
       .withPassword('vellum')
       .start();
+    redis = await new GenericContainer('redis:7-alpine').withExposedPorts(6379).start();
+    const redisUrl = `redis://${redis.getHost()}:${redis.getMappedPort(6379)}`;
+
     sql = postgres(container.getConnectionUri(), { max: 4 });
     const db = drizzle(sql);
     await migrate(db, { migrationsFolder });
@@ -95,8 +126,11 @@ describe('ExtractionsController POST /extractions (integration)', () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'vellum-extractions-test-'));
     provider = new MockProvider();
 
+    queueConnection = createRedisConnection(redisUrl);
+    queue = new Queue(EXTRACTION_QUEUE_NAME, { connection: queueConnection });
+
     const moduleRef = await Test.createTestingModule({
-      imports: [TestInfraModule.forRoot(db, storageDir, provider)],
+      imports: [TestInfraModule.forRoot(db, storageDir, provider, redisUrl, queue)],
     }).compile();
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
@@ -112,11 +146,14 @@ describe('ExtractionsController POST /extractions (integration)', () => {
       maxAge: 60 * 60,
     });
     cookie = `authjs.session-token=${token}`;
-  }, 60_000);
+  }, 90_000);
 
   afterAll(async () => {
     await app?.close();
+    await queue?.close();
+    await queueConnection?.quit();
     await sql?.end({ timeout: 5 });
+    await redis?.stop();
     await container?.stop();
   });
 
@@ -140,36 +177,57 @@ describe('ExtractionsController POST /extractions (integration)', () => {
     });
   }
 
+  function get(id: string) {
+    return app.inject({ method: 'GET', url: `/extractions/${id}`, headers: { cookie } });
+  }
+
+  async function pollUntilTerminal(id: string, timeoutMs = 20_000): Promise<ExtractionBody> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const body = get(id).then((r) => r.json() as ExtractionBody);
+      const row = await body;
+      if (row.status !== 'pending') return row;
+      if (Date.now() > deadline) {
+        throw new Error(`extraction ${id} still pending after ${timeoutMs}ms`);
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+
   it('rejects unauthenticated', async () => {
     const res = await app.inject({ method: 'POST', url: '/extractions', payload: {} });
     expect(res.statusCode).toBe(401);
   });
 
-  it('extracts a staged upload and returns the row', async () => {
+  it('accepts the request and returns a pending extraction', async () => {
+    const upload = await stageUploadWithFixture(`pending-${Math.random()}`);
+    const res = await post({ uploadId: upload.id }, `idem-pending-${Math.random()}`);
+    expect(res.statusCode).toBe(202);
+    const row = res.json() as ExtractionBody;
+    expect(row.uploadId).toBe(upload.id);
+    expect(row.status).toBe('pending');
+    expect(row.receipt).toBeNull();
+    expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('the worker extracts a staged upload to succeeded', async () => {
     const upload = await stageUploadWithFixture(`fixture-bytes-${Math.random()}`);
     const res = await post({ uploadId: upload.id }, `idem-ok-${Math.random()}`);
-    expect(res.statusCode).toBe(201);
-    const row = res.json() as {
-      uploadId: string;
-      provider: string;
-      status: string;
-      confidence: string | null;
-      receipt: { vendor: { name: string }; totalMinor: string };
-      costEstimatedUsd: string;
-    };
-    expect(row.uploadId).toBe(upload.id);
-    expect(row.provider).toBe('mock');
+    expect(res.statusCode).toBe(202);
+    const row = await pollUntilTerminal((res.json() as ExtractionBody).id);
     expect(row.status).toBe('succeeded');
+    expect(row.provider).toBe('mock');
     expect(row.confidence).toBe('0.950');
-    expect(row.receipt.vendor.name).toBe('Blue Bottle');
-    expect(row.receipt.totalMinor).toBe('979');
+    expect(row.receipt?.vendor.name).toBe('Blue Bottle');
+    expect(row.receipt?.totalMinor).toBe('979');
   });
 
   it('marks low-confidence extractions as needs_review', async () => {
     const upload = await stageUploadWithFixture(`low-conf-${Math.random()}`, 0.55);
     const res = await post({ uploadId: upload.id }, `idem-needs-review-${Math.random()}`);
-    expect(res.statusCode).toBe(201);
-    expect((res.json() as { status: string }).status).toBe('needs_review');
+    expect(res.statusCode).toBe(202);
+    const row = await pollUntilTerminal((res.json() as ExtractionBody).id);
+    expect(row.status).toBe('needs_review');
   });
 
   it('returns 404 when uploadId does not exist', async () => {
@@ -185,27 +243,30 @@ describe('ExtractionsController POST /extractions (integration)', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('caches via request_hash: second call returns the same extraction id', async () => {
+  it('dedupes via request_hash: a second request returns the same extraction id', async () => {
     const upload = await stageUploadWithFixture(`cache-${Math.random()}`);
     const a = await post({ uploadId: upload.id }, `idem-cache-a-${Math.random()}`);
-    expect(a.statusCode).toBe(201);
-    const idA = (a.json() as { id: string }).id;
+    expect(a.statusCode).toBe(202);
+    const idA = (a.json() as ExtractionBody).id;
 
     const b = await post({ uploadId: upload.id }, `idem-cache-b-${Math.random()}`);
-    expect(b.statusCode).toBe(201);
-    expect((b.json() as { id: string }).id).toBe(idA);
+    expect(b.statusCode).toBe(202);
+    expect((b.json() as ExtractionBody).id).toBe(idA);
   });
 
-  it('records failure with extraction_failed when provider throws', async () => {
+  it('records a failed extraction when the model cannot read the image', async () => {
     const upload = await uploadsService.create({
       buffer: Buffer.from(`unstaged-${Math.random()}`),
       mimeType: 'image/png',
       userId: 'usr_test',
     });
-    // Provider has no fixture staged for this image, MockProvider throws
+    // No fixture staged for this image, so MockProvider throws a
+    // deterministic (non-retryable) error; the worker records failure.
     const res = await post({ uploadId: upload.id }, `idem-fail-${Math.random()}`);
-    expect(res.statusCode).toBe(400);
-    expect((res.json() as { error: string }).error).toBe('extraction_failed');
+    expect(res.statusCode).toBe(202);
+    const row = await pollUntilTerminal((res.json() as ExtractionBody).id);
+    expect(row.status).toBe('failed');
+    expect(row.errorCode).toBe('InvalidProviderResponseError');
   });
 
   function confirmPost(id: string, body: Record<string, unknown>, key: string) {
@@ -220,8 +281,11 @@ describe('ExtractionsController POST /extractions (integration)', () => {
   async function createSucceededExtraction(seed: string): Promise<string> {
     const upload = await stageUploadWithFixture(seed);
     const res = await post({ uploadId: upload.id }, `idem-seed-${seed}`);
-    expect(res.statusCode).toBe(201);
-    return (res.json() as { id: string }).id;
+    expect(res.statusCode).toBe(202);
+    const id = (res.json() as ExtractionBody).id;
+    const row = await pollUntilTerminal(id);
+    expect(row.status).toBe('succeeded');
+    return id;
   }
 
   it('confirms a succeeded extraction into a balanced journal entry', async () => {
@@ -326,9 +390,11 @@ describe('ExtractionsController POST /extractions (integration)', () => {
       mimeType: 'image/png',
       userId: 'usr_test',
     });
-    const failed = await post({ uploadId: upload.id }, `idem-failrec-${Math.random()}`);
-    expect(failed.statusCode).toBe(400);
-    const failedId = (failed.json() as { extractionId: string }).extractionId;
+    const accepted = await post({ uploadId: upload.id }, `idem-failrec-${Math.random()}`);
+    expect(accepted.statusCode).toBe(202);
+    const failedId = (accepted.json() as ExtractionBody).id;
+    const failedRow = await pollUntilTerminal(failedId);
+    expect(failedRow.status).toBe('failed');
 
     const res = await confirmPost(
       failedId,

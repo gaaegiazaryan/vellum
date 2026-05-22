@@ -107,4 +107,20 @@ describe('loadEnv', () => {
   it('rejects an unknown EXTRACTION_PROVIDER', () => {
     expect(() => loadEnv({ ...base, EXTRACTION_PROVIDER: 'openai' })).toThrow(EnvValidationError);
   });
+
+  it('defaults REDIS_URL to localhost when unset', () => {
+    const env = loadEnv({ ...base });
+    expect(env.REDIS_URL).toBe('redis://localhost:6379/0');
+  });
+
+  it('accepts a custom REDIS_URL', () => {
+    const env = loadEnv({ ...base, REDIS_URL: 'rediss://cache.example.com:6380/1' });
+    expect(env.REDIS_URL).toBe('rediss://cache.example.com:6380/1');
+  });
+
+  it('rejects a non-redis REDIS_URL', () => {
+    expect(() => loadEnv({ ...base, REDIS_URL: 'http://localhost:6379' })).toThrow(
+      EnvValidationError,
+    );
+  });
 });
