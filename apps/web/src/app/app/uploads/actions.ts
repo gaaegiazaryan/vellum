@@ -61,9 +61,6 @@ function friendlyApiError(status: number, body: string): string {
     const parsed = JSON.parse(body) as { error?: string; message?: string };
     if (parsed.error === 'upload_too_large') return 'file is too large (5 MB max)';
     if (parsed.error === 'unsupported_mime_type') return 'use png, jpeg, or webp';
-    if (parsed.error === 'extraction_failed') {
-      return `extraction failed: ${parsed.message ?? 'unknown error'}`;
-    }
     return parsed.message ?? `api error ${status}`;
   } catch {
     return `api error ${status}`;
