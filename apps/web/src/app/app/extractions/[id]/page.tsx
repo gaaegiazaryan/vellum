@@ -187,6 +187,9 @@ export default async function ReviewExtractionPage({
           extractionId={extraction.id}
           accounts={accounts}
           defaultDescription={receipt.vendor.name}
+          defaultTotalMinor={receipt.totalMinor}
+          defaultOccurredAt={new Date(receipt.occurredAt).toISOString().slice(0, 10)}
+          defaultCurrency={receipt.currency}
         />
       )}
     </main>
