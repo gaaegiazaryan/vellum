@@ -332,6 +332,63 @@ describe('ExtractionsController POST /extractions (integration)', () => {
     );
   });
 
+  it('posts the overridden total, date, and currency instead of the parsed receipt', async () => {
+    const id = await createSucceededExtraction(`confirm-override-${Math.random()}`);
+    const res = await confirmPost(
+      id,
+      {
+        debitAccountId: EXPENSE_ACCOUNT_ID,
+        creditAccountId: CASH_ACCOUNT_ID,
+        totalMinor: '1200',
+        occurredAt: '2026-05-19T00:00:00Z',
+        currency: 'EUR',
+      },
+      `idem-override-${Math.random()}`,
+    );
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as {
+      journalEntry: { id: string; currency: string; occurredAt: string };
+    };
+    expect(body.journalEntry.currency).toBe('EUR');
+    expect(new Date(body.journalEntry.occurredAt).toISOString()).toBe('2026-05-19T00:00:00.000Z');
+
+    const lines = await sql`
+      SELECT amount FROM ledger_lines WHERE journal_entry_id = ${body.journalEntry.id}
+    `;
+    expect(lines).toHaveLength(2);
+    expect(lines.every((l) => l.amount === '1200')).toBe(true);
+  });
+
+  it('rejects an override total that is not a positive integer', async () => {
+    const id = await createSucceededExtraction(`confirm-badtotal-${Math.random()}`);
+    const bad = await confirmPost(
+      id,
+      { debitAccountId: EXPENSE_ACCOUNT_ID, creditAccountId: CASH_ACCOUNT_ID, totalMinor: '-5' },
+      `idem-badtotal-${Math.random()}`,
+    );
+    expect(bad.statusCode).toBe(400);
+
+    const zero = await confirmPost(
+      id,
+      { debitAccountId: EXPENSE_ACCOUNT_ID, creditAccountId: CASH_ACCOUNT_ID, totalMinor: '0' },
+      `idem-zerototal-${Math.random()}`,
+    );
+    expect(zero.statusCode).toBe(422);
+    expect((zero.json() as { error: string }).error).toBe('non_positive_total');
+  });
+
+  it('leaves the stored receipt untouched after an override confirm', async () => {
+    const id = await createSucceededExtraction(`confirm-immutable-${Math.random()}`);
+    const res = await confirmPost(
+      id,
+      { debitAccountId: EXPENSE_ACCOUNT_ID, creditAccountId: CASH_ACCOUNT_ID, totalMinor: '5000' },
+      `idem-immutable-${Math.random()}`,
+    );
+    expect(res.statusCode).toBe(201);
+    const [row] = await sql`SELECT receipt FROM extractions WHERE id = ${id}`;
+    expect((row?.receipt as { totalMinor: string }).totalMinor).toBe('979');
+  });
+
   it('rejects confirming the same extraction twice', async () => {
     const id = await createSucceededExtraction(`confirm-twice-${Math.random()}`);
     const first = await confirmPost(
