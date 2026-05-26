@@ -28,6 +28,15 @@ const confirmExtractionSchema = z.object({
   debitAccountId: z.string().uuid(),
   creditAccountId: z.string().uuid(),
   description: z.string().trim().min(1).max(500).optional(),
+  totalMinor: z
+    .string()
+    .regex(/^\d+$/, 'totalMinor must be a non-negative integer in minor units')
+    .optional(),
+  occurredAt: z.coerce.date().optional(),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/, 'currency must be a 3-letter ISO 4217 code')
+    .optional(),
 });
 
 @Controller('extractions')

@@ -66,6 +66,16 @@ export interface ConfirmExtractionInput {
   debitAccountId: string;
   creditAccountId: string;
   description?: string;
+  /**
+   * Optional human corrections applied when building the entry. The
+   * model misreads totals and dates; the reviewer fixes them here. The
+   * stored receipt jsonb is never mutated (ADR-0005 audit integrity) -
+   * the correction lives on the journal entry, and the gap between the
+   * two is the record of what the human changed.
+   */
+  totalMinor?: string;
+  occurredAt?: Date;
+  currency?: string;
 }
 
 export interface ConfirmExtractionResult {
@@ -273,13 +283,16 @@ export class ExtractionsService {
       }
 
       const receipt = receiptSchema.parse(row.receipt);
-      const total = BigInt(receipt.totalMinor);
+      const total =
+        input.totalMinor !== undefined ? BigInt(input.totalMinor) : BigInt(receipt.totalMinor);
       if (total <= 0n) {
         throw new UnprocessableEntityException({
           error: 'non_positive_total',
-          message: 'receipt total must be positive to post a journal entry',
+          message: 'total must be positive to post a journal entry',
         });
       }
+      const occurredAt = input.occurredAt ?? receipt.occurredAt;
+      const currency = input.currency ?? receipt.currency;
 
       const accountIds = [input.debitAccountId, input.creditAccountId];
       const found = await tx
@@ -300,9 +313,9 @@ export class ExtractionsService {
       const [entry] = await tx
         .insert(journalEntries)
         .values({
-          occurredAt: receipt.occurredAt,
+          occurredAt,
           description,
-          currency: receipt.currency,
+          currency,
           createdById: userId,
         })
         .returning();
