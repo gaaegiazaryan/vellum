@@ -16,16 +16,51 @@ export function ConfirmForm({
   extractionId,
   accounts,
   defaultDescription,
+  defaultTotalMinor,
+  defaultOccurredAt,
+  defaultCurrency,
 }: {
   extractionId: string;
   accounts: AccountOption[];
   defaultDescription: string;
+  defaultTotalMinor: string;
+  defaultOccurredAt: string;
+  defaultCurrency: string;
 }) {
   const [state, formAction, pending] = useActionState(confirmExtractionAction, INITIAL);
 
   return (
     <form action={formAction} className="upload-form">
       <input type="hidden" name="extractionId" value={extractionId} />
+
+      <label>
+        <span>Total (minor units)</span>
+        <input
+          name="totalMinor"
+          type="text"
+          inputMode="numeric"
+          pattern="\d+"
+          defaultValue={defaultTotalMinor}
+          required
+        />
+      </label>
+
+      <label>
+        <span>Date</span>
+        <input name="occurredAt" type="date" defaultValue={defaultOccurredAt} required />
+      </label>
+
+      <label>
+        <span>Currency</span>
+        <input
+          name="currency"
+          type="text"
+          maxLength={3}
+          pattern="[A-Za-z]{3}"
+          defaultValue={defaultCurrency}
+          required
+        />
+      </label>
 
       <label>
         <span>Debit (expense account)</span>

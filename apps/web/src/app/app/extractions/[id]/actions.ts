@@ -14,6 +14,12 @@ const formSchema = z.object({
   debitAccountId: z.string().uuid('pick an expense account'),
   creditAccountId: z.string().uuid('pick a payment account'),
   description: z.string().trim().max(500).optional(),
+  totalMinor: z.string().regex(/^\d+$/, 'total must be a whole number of minor units').optional(),
+  occurredAt: z.string().min(1).optional(),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/, 'currency must be a 3-letter code')
+    .optional(),
 });
 
 export async function confirmExtractionAction(
@@ -25,6 +31,9 @@ export async function confirmExtractionAction(
     debitAccountId: formData.get('debitAccountId'),
     creditAccountId: formData.get('creditAccountId'),
     description: (formData.get('description') as string) || undefined,
+    totalMinor: (formData.get('totalMinor') as string) || undefined,
+    occurredAt: (formData.get('occurredAt') as string) || undefined,
+    currency: (formData.get('currency') as string)?.toUpperCase() || undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'invalid form' };
