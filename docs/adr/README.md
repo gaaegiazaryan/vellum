@@ -20,3 +20,4 @@ An accepted ADR is immutable. If we change our minds, we write a new ADR that su
 - [0005](./0005-ai-extraction-strategy.md): AI extraction strategy
 - [0006](./0006-receipt-to-journal-entry.md): Receipt to journal entry mapping
 - [0007](./0007-async-extraction-pipeline.md): Async extraction pipeline
+- [0008](./0008-object-storage-driver.md): Object storage driver
