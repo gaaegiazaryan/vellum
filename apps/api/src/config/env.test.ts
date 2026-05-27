@@ -123,4 +123,36 @@ describe('loadEnv', () => {
       EnvValidationError,
     );
   });
+
+  it('defaults STORAGE_DRIVER to filesystem', () => {
+    const env = loadEnv({ ...base });
+    expect(env.STORAGE_DRIVER).toBe('filesystem');
+    expect(env.S3_FORCE_PATH_STYLE).toBe(false);
+  });
+
+  it('accepts STORAGE_DRIVER=s3 with the required S3 vars', () => {
+    const env = loadEnv({
+      ...base,
+      STORAGE_DRIVER: 's3',
+      S3_BUCKET: 'receipts',
+      S3_REGION: 'auto',
+      S3_ACCESS_KEY_ID: 'key',
+      S3_SECRET_ACCESS_KEY: 'secret',
+      S3_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+      S3_FORCE_PATH_STYLE: 'true',
+    });
+    expect(env.STORAGE_DRIVER).toBe('s3');
+    expect(env.S3_BUCKET).toBe('receipts');
+    expect(env.S3_FORCE_PATH_STYLE).toBe(true);
+  });
+
+  it('rejects STORAGE_DRIVER=s3 without the S3 credentials', () => {
+    expect(() => loadEnv({ ...base, STORAGE_DRIVER: 's3', S3_BUCKET: 'receipts' })).toThrow(
+      EnvValidationError,
+    );
+  });
+
+  it('rejects an unknown STORAGE_DRIVER', () => {
+    expect(() => loadEnv({ ...base, STORAGE_DRIVER: 'gcs' })).toThrow(EnvValidationError);
+  });
 });

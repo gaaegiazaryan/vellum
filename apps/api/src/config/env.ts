@@ -21,6 +21,16 @@ const envSchema = z
       })
       .default('redis://localhost:6379/0'),
     UPLOAD_DIR: z.string().default('/tmp/vellum-uploads'),
+    STORAGE_DRIVER: z.enum(['filesystem', 's3']).default('filesystem'),
+    S3_BUCKET: z.string().min(1).optional(),
+    S3_REGION: z.string().min(1).optional(),
+    S3_ENDPOINT: z.string().url().optional(),
+    S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+    S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+    S3_FORCE_PATH_STYLE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
     EXTRACTION_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
   })
@@ -28,6 +38,16 @@ const envSchema = z
     message: 'EXTRACTION_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set',
     path: ['ANTHROPIC_API_KEY'],
   })
+  .refine(
+    (env) =>
+      env.STORAGE_DRIVER !== 's3' ||
+      Boolean(env.S3_BUCKET && env.S3_REGION && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY),
+    {
+      message:
+        'STORAGE_DRIVER=s3 requires S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY',
+      path: ['STORAGE_DRIVER'],
+    },
+  )
   .transform((env) => ({
     ...env,
     LOG_LEVEL: env.LOG_LEVEL ?? (env.NODE_ENV === 'production' ? 'info' : 'debug'),
