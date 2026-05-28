@@ -9,6 +9,7 @@ export class UploadsModule {
   static forRoot(env: Env): DynamicModule {
     return {
       module: UploadsModule,
+      global: true,
       controllers: [UploadsController],
       providers: [{ provide: OBJECT_STORAGE, useValue: pickStorage(env) }, UploadsService],
       exports: [UploadsService, OBJECT_STORAGE],

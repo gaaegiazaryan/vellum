@@ -5,8 +5,6 @@ import type { ExtractionProvider } from '@vellum/extraction';
 import { ExtractionsController } from './extractions.controller.js';
 import { ExtractionsService, EXTRACTION_PROVIDER } from './extractions.service.js';
 import { ExtractionWorker } from './extraction.worker.js';
-import { QueueModule } from '../queue/queue.module.js';
-import { UploadsModule } from '../uploads/uploads.module.js';
 import type { Env } from '../config/env.js';
 
 /**
@@ -24,9 +22,13 @@ import type { Env } from '../config/env.js';
 @Module({})
 export class ExtractionsModule {
   static forRoot(env: Env): DynamicModule {
+    // UploadsModule and QueueModule are imported once in AppModule and
+    // declared global there, so this module does not re-import them.
+    // Re-importing them here would call their forRoot twice, each
+    // returning a fresh storage / queue instance, which Nest cannot
+    // dedupe by structural hash and Fastify rejects on duplicate routes.
     return {
       module: ExtractionsModule,
-      imports: [UploadsModule.forRoot(env), QueueModule.forRoot(env)],
       controllers: [ExtractionsController],
       providers: [
         { provide: EXTRACTION_PROVIDER, useValue: pickProvider(env) },

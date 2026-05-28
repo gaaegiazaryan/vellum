@@ -55,6 +55,7 @@ export class QueueModule {
     const queue = new Queue(EXTRACTION_QUEUE_NAME, { connection });
     return {
       module: QueueModule,
+      global: true,
       providers: [
         { provide: EXTRACTION_QUEUE, useValue: queue },
         { provide: QUEUE_CONNECTION, useValue: connection },
