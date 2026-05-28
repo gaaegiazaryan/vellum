@@ -22,3 +22,4 @@ An accepted ADR is immutable. If we change our minds, we write a new ADR that su
 - [0007](./0007-async-extraction-pipeline.md): Async extraction pipeline
 - [0008](./0008-object-storage-driver.md): Object storage driver
 - [0009](./0009-production-build.md): Production build for the api
+- [0010](./0010-bundle-metadata-emission.md): Bundle decorator metadata emission
