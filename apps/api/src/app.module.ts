@@ -1,5 +1,4 @@
 import { Module, type DynamicModule } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { AccountsModule } from './accounts/accounts.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -10,7 +9,6 @@ import { JournalEntriesModule } from './journal-entries/journal-entries.module.j
 import { QueueModule } from './queue/queue.module.js';
 import { UploadsModule } from './uploads/uploads.module.js';
 import { ExtractionsModule } from './extractions/extractions.module.js';
-import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor.js';
 import { REDACT_PATHS } from './observability/redact-paths.js';
 import type { Env } from './config/env.js';
 
@@ -37,7 +35,6 @@ export class AppModule {
         ExtractionsModule.forRoot(env),
         HealthzModule,
       ],
-      providers: [{ provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor }],
     };
   }
 }
