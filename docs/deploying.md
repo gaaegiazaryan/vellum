@@ -66,28 +66,46 @@ The seed is idempotent (`ON CONFLICT (code) DO NOTHING`). Running it twice is sa
 ---
 
     pnpm install --frozen-lockfile
-    pnpm --filter @vellum/web build
-    pnpm --filter @vellum/api typecheck   # build step for the api is the same as typecheck today
+    pnpm --filter @vellum/api build       # esbuild bundle -> apps/api/dist/main.js
+    pnpm --filter @vellum/web build       # next build
 
     # then on each service:
-    pnpm --filter @vellum/web start       # web
-    pnpm --filter @vellum/api dev         # api; replaced with a node entrypoint when we add one
+    pnpm --filter @vellum/api start       # node apps/api/dist/main.js
+    pnpm --filter @vellum/web start       # next start
 
-The api currently boots through `tsx` for the dev path. A compiled `dist/` entrypoint will land before the first stable release; until then, the dev script is what production runs too. Acceptable for pre-alpha, not for the first paying user.
+The api build is described in ADR-0009 and ADR-0010: esbuild bundles `src/main.ts` with the workspace packages inlined, externalizes real npm deps, and runs every `.ts` file through TypeScript's `transpileModule` so `Reflect.metadata` is emitted for Nest DI. The compiled `dist/main.js` is what production runs.
 
-5. What this guide does not cover yet
+5. Container build
+
+---
+
+`apps/api/Dockerfile` is a multi-stage build that produces a small runtime image:
+
+    docker build -t vellum-api -f apps/api/Dockerfile .
+    docker run --rm \
+      -e DATABASE_URL=postgres://... -e REDIS_URL=redis://... \
+      -e AUTH_SECRET=$(openssl rand -base64 48) \
+      -e STORAGE_DRIVER=s3 -e S3_BUCKET=... -e S3_REGION=... \
+      -e S3_ACCESS_KEY_ID=... -e S3_SECRET_ACCESS_KEY=... \
+      -e EXTRACTION_PROVIDER=anthropic -e ANTHROPIC_API_KEY=sk-ant-... \
+      -p 3001:3001 vellum-api
+
+The image runs `node dist/main.js` as PID 1 with `NODE_ENV=production`. It carries a Docker `HEALTHCHECK` that calls `GET /healthz` every 30 seconds, so orchestrators that read Docker health (Fly.io, Docker Compose, plain Docker) get liveness for free. Platforms with their own health-probe contracts (Railway, Kubernetes) should still hit `/healthz` directly.
+
+6. What this guide does not cover yet
 
 ---
 
 The following are real concerns we will document properly before the project is usable:
 
+- A web Dockerfile. `apps/web` still deploys via `next build` and `next start` on a Node runtime today; a container build with the right build-time env handling lands next.
 - Bind addresses and reverse-proxy headers. The api listens on `0.0.0.0` and trusts proxy headers (`trustProxy: true` in the Fastify adapter); your reverse proxy needs to set `X-Forwarded-For` and `X-Forwarded-Proto`.
 - Session cookie domain. If web and api are on the same parent domain, the cookie just works. If they are on unrelated domains, you need a different cookie strategy and we will write that ADR when the situation arises.
 - Email delivery. Auth.js verification and password reset both need a working transactional email provider. We default to Resend but the configuration is not yet exposed via env.
 - Backups and PITR procedures.
 - Observability: where the pino JSON stream goes in prod. Probably stdout into your platform's log aggregator; we will document the exact shape when we run the first deploy.
 
-6. Sanity check
+7. Sanity check
 
 ---
 
