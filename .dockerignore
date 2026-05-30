@@ -1,0 +1,29 @@
+.git
+.github
+.husky
+.claude
+.vscode
+.idea
+
+# Dev artifacts
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/.cache
+**/coverage
+*.tsbuildinfo
+
+# Private / local-only
+STATUS.md
+CLAUDE.md
+.env
+.env.*
+!.env.example
+
+# OS / editor noise
+.DS_Store
+**/.DS_Store
+*.swp
+*.log
