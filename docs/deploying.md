@@ -92,13 +92,28 @@ The api build is described in ADR-0009 and ADR-0010: esbuild bundles `src/main.t
 
 The image runs `node dist/main.js` as PID 1 with `NODE_ENV=production`. It carries a Docker `HEALTHCHECK` that calls `GET /healthz` every 30 seconds, so orchestrators that read Docker health (Fly.io, Docker Compose, plain Docker) get liveness for free. Platforms with their own health-probe contracts (Railway, Kubernetes) should still hit `/healthz` directly.
 
+`apps/web/Dockerfile` is the matching image for the web service:
+
+    docker build -t vellum-web -f apps/web/Dockerfile .
+    docker run --rm \
+      -e DATABASE_URL=postgres://... \
+      -e AUTH_SECRET=$(openssl rand -base64 48) \
+      -e AUTH_URL=https://your-domain \
+      -p 3000:3000 vellum-web
+
+Two quirks worth knowing about the web build:
+
+- `next build` evaluates route handlers to collect page data, which reads `DATABASE_URL` and `AUTH_SECRET` at module load. The Dockerfile sets placeholders for both at build time so the build does not crash on a real env check; runtime values come from the deploy env. Making env validation lazy in the auth route is a planned follow-up that will let the build run without any env at all.
+- The image is not built with `pnpm deploy --prod` because `next start` reads `next.config.ts` at runtime, which needs `typescript` (a devDependency). Converting `next.config.ts` to `.js` and trimming dev deps back out is a planned follow-up that will shrink the image.
+
 6. What this guide does not cover yet
 
 ---
 
 The following are real concerns we will document properly before the project is usable:
 
-- A web Dockerfile. `apps/web` still deploys via `next build` and `next start` on a Node runtime today; a container build with the right build-time env handling lands next.
+- Lazy env validation in the web. Today `loadEnv` runs at module load inside the auth route, which forces `next build` to need placeholder env vars. Moving the check to request time lets the Dockerfile drop the build-time placeholders.
+- A slimmer web image. The current Docker build keeps devDependencies because `next.config.ts` needs `typescript` at runtime; converting it to `.js` and re-enabling `pnpm deploy --prod` shrinks the image.
 - Bind addresses and reverse-proxy headers. The api listens on `0.0.0.0` and trusts proxy headers (`trustProxy: true` in the Fastify adapter); your reverse proxy needs to set `X-Forwarded-For` and `X-Forwarded-Proto`.
 - Session cookie domain. If web and api are on the same parent domain, the cookie just works. If they are on unrelated domains, you need a different cookie strategy and we will write that ADR when the situation arises.
 - Email delivery. Auth.js verification and password reset both need a working transactional email provider. We default to Resend but the configuration is not yet exposed via env.
