@@ -37,9 +37,14 @@ interface AccountRow {
 }
 
 function formatMinor(minor: string, currency: string): string {
-  const n = Number(minor);
-  if (!Number.isFinite(n)) return `${currency} ${minor}`;
-  return `${currency} ${(n / 100).toFixed(2)}`;
+  return `${currency} ${minorToMajor(minor)}`;
+}
+
+// 979 -> "9.79", 5 -> "0.05", 100 -> "1.00". Assumes 2 minor digits.
+function minorToMajor(minor: string): string {
+  if (!/^\d+$/.test(minor)) return minor;
+  if (minor.length <= 2) return `0.${minor.padStart(2, '0')}`;
+  return `${minor.slice(0, -2)}.${minor.slice(-2)}`;
 }
 
 export default async function ReviewExtractionPage({
@@ -187,7 +192,7 @@ export default async function ReviewExtractionPage({
           extractionId={extraction.id}
           accounts={accounts}
           defaultDescription={receipt.vendor.name}
-          defaultTotalMinor={receipt.totalMinor}
+          defaultTotal={minorToMajor(receipt.totalMinor)}
           defaultOccurredAt={new Date(receipt.occurredAt).toISOString().slice(0, 10)}
           defaultCurrency={receipt.currency}
         />

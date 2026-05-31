@@ -9,12 +9,26 @@ export interface ConfirmState {
   error?: string;
 }
 
+// Most ISO 4217 currencies have two minor-unit digits. JPY (0) and a
+// handful with 3 are not covered here; revisit if a user actually needs
+// one of them. Reject anything but a non-negative decimal with at most
+// two fractional digits.
+const MAJOR_AMOUNT = /^\d+(\.\d{1,2})?$/;
+
+function majorToMinor(s: string): string | null {
+  if (!MAJOR_AMOUNT.test(s)) return null;
+  const [whole = '0', frac = ''] = s.split('.');
+  const fracPadded = (frac + '00').slice(0, 2);
+  const minor = BigInt(whole) * 100n + BigInt(fracPadded);
+  return minor.toString();
+}
+
 const formSchema = z.object({
   extractionId: z.string().uuid(),
   debitAccountId: z.string().uuid('pick an expense account'),
   creditAccountId: z.string().uuid('pick a payment account'),
   description: z.string().trim().max(500).optional(),
-  totalMinor: z.string().regex(/^\d+$/, 'total must be a whole number of minor units').optional(),
+  total: z.string().regex(MAJOR_AMOUNT, 'total must look like 12.34').optional(),
   occurredAt: z.string().min(1).optional(),
   currency: z
     .string()
@@ -31,7 +45,7 @@ export async function confirmExtractionAction(
     debitAccountId: formData.get('debitAccountId'),
     creditAccountId: formData.get('creditAccountId'),
     description: (formData.get('description') as string) || undefined,
-    totalMinor: (formData.get('totalMinor') as string) || undefined,
+    total: (formData.get('total') as string)?.trim() || undefined,
     occurredAt: (formData.get('occurredAt') as string) || undefined,
     currency: (formData.get('currency') as string)?.toUpperCase() || undefined,
   });
@@ -42,7 +56,17 @@ export async function confirmExtractionAction(
     return { error: 'debit and credit accounts must differ' };
   }
 
-  const { extractionId, ...body } = parsed.data;
+  let totalMinor: string | undefined;
+  if (parsed.data.total !== undefined) {
+    const m = majorToMinor(parsed.data.total);
+    if (m === null) return { error: 'total must look like 12.34' };
+    if (m === '0') return { error: 'total must be greater than zero' };
+    totalMinor = m;
+  }
+
+  const { extractionId, total: _total, ...rest } = parsed.data;
+  void _total;
+  const body = { ...rest, ...(totalMinor !== undefined ? { totalMinor } : {}) };
   const client = await apiClient();
   try {
     await client.post(`/extractions/${extractionId}/confirm`, body, `confirm-${randomUUID()}`);
