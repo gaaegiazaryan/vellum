@@ -16,14 +16,14 @@ export function ConfirmForm({
   extractionId,
   accounts,
   defaultDescription,
-  defaultTotalMinor,
+  defaultTotal,
   defaultOccurredAt,
   defaultCurrency,
 }: {
   extractionId: string;
   accounts: AccountOption[];
   defaultDescription: string;
-  defaultTotalMinor: string;
+  defaultTotal: string;
   defaultOccurredAt: string;
   defaultCurrency: string;
 }) {
@@ -34,13 +34,14 @@ export function ConfirmForm({
       <input type="hidden" name="extractionId" value={extractionId} />
 
       <label>
-        <span>Total (minor units)</span>
+        <span>Total</span>
         <input
-          name="totalMinor"
+          name="total"
           type="text"
-          inputMode="numeric"
-          pattern="\d+"
-          defaultValue={defaultTotalMinor}
+          inputMode="decimal"
+          pattern="\d+(\.\d{1,2})?"
+          placeholder="0.00"
+          defaultValue={defaultTotal}
           required
         />
       </label>
