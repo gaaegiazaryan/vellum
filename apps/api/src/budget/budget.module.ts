@@ -1,0 +1,18 @@
+import { Module, type DynamicModule } from '@nestjs/common';
+import { BudgetService, EXTRACTION_BUDGET_LIMIT_USD } from './budget.service.js';
+import type { Env } from '../config/env.js';
+
+@Module({})
+export class BudgetModule {
+  static forRoot(env: Env): DynamicModule {
+    return {
+      module: BudgetModule,
+      global: true,
+      providers: [
+        { provide: EXTRACTION_BUDGET_LIMIT_USD, useValue: env.EXTRACTION_DAILY_BUDGET_USD ?? null },
+        BudgetService,
+      ],
+      exports: [BudgetService, EXTRACTION_BUDGET_LIMIT_USD],
+    };
+  }
+}

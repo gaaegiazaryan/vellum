@@ -7,6 +7,7 @@ import { DatabaseModule } from './db/database.module.js';
 import { IdempotencyModule } from './idempotency/idempotency.module.js';
 import { JournalEntriesModule } from './journal-entries/journal-entries.module.js';
 import { QueueModule } from './queue/queue.module.js';
+import { BudgetModule } from './budget/budget.module.js';
 import { UploadsModule } from './uploads/uploads.module.js';
 import { ExtractionsModule } from './extractions/extractions.module.js';
 import { REDACT_PATHS } from './observability/redact-paths.js';
@@ -31,6 +32,7 @@ export class AppModule {
         AccountsModule,
         JournalEntriesModule,
         QueueModule.forRoot(env),
+        BudgetModule.forRoot(env),
         UploadsModule.forRoot(env),
         ExtractionsModule.forRoot(env),
         HealthzModule,

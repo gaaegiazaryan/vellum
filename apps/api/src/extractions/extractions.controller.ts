@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
   NotFoundException,
   Param,
@@ -11,8 +12,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { z } from 'zod';
+import { BudgetExceededError } from '@vellum/extraction';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
+import { BudgetService } from '../budget/budget.service.js';
 import { Idempotent } from '../idempotency/idempotency.decorator.js';
 import {
   ExtractionsService,
@@ -42,7 +45,10 @@ const confirmExtractionSchema = z.object({
 @Controller('extractions')
 @UseGuards(AuthGuard)
 export class ExtractionsController {
-  constructor(private readonly extractions: ExtractionsService) {}
+  constructor(
+    private readonly extractions: ExtractionsService,
+    private readonly budget: BudgetService,
+  ) {}
 
   @Post()
   @Idempotent()
@@ -58,10 +64,26 @@ export class ExtractionsController {
         issues: parsed.error.issues,
       });
     }
-    return this.extractions.create({
-      uploadId: parsed.data.uploadId,
-      userId: user?.id ?? null,
-    });
+    try {
+      return await this.extractions.create({
+        uploadId: parsed.data.uploadId,
+        userId: user?.id ?? null,
+      });
+    } catch (err) {
+      if (err instanceof BudgetExceededError) {
+        const resetAt = this.budget.nextResetAt();
+        throw new HttpException(
+          {
+            error: 'budget_exceeded',
+            limitUsd: err.limitUsd,
+            spentUsd: err.accumulatedUsd,
+            resetAt: resetAt.toISOString(),
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      throw err;
+    }
   }
 
   @Post(':id/confirm')
