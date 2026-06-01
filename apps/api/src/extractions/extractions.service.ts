@@ -18,6 +18,7 @@ import {
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
 import { extractions } from '../db/schema/extractions.js';
 import { accounts, journalEntries, ledgerLines } from '../db/schema/ledger.js';
+import { BudgetService } from '../budget/budget.service.js';
 import { EXTRACTION_QUEUE, type ExtractionJobData } from '../queue/queue.module.js';
 import { UploadsService } from '../uploads/uploads.service.js';
 
@@ -95,6 +96,7 @@ export class ExtractionsService {
     @Inject(EXTRACTION_PROVIDER) private readonly provider: ExtractionProvider,
     @Inject(EXTRACTION_QUEUE) private readonly queue: Queue,
     private readonly uploadsService: UploadsService,
+    private readonly budget: BudgetService,
   ) {}
 
   /**
@@ -128,6 +130,10 @@ export class ExtractionsService {
     if (existing && existing.status !== 'failed') {
       return rowFromDb(existing);
     }
+
+    // Cheap, client-facing check. The worker re-checks before each
+    // provider call so a long queue cannot quietly slip past the cap.
+    await this.budget.assertWithinBudget();
 
     const [row] = await this.db
       .insert(extractions)
@@ -172,6 +178,10 @@ export class ExtractionsService {
 
     const upload = await this.uploadsService.findById(row.uploadId);
     if (!upload) throw new Error(`upload ${row.uploadId} for extraction ${extractionId} not found`);
+
+    // Re-check the daily cap right before the provider call so a job
+    // queued under-budget cannot run after the cap was hit.
+    await this.budget.assertWithinBudget();
 
     const buffer = await this.uploadsService.getBytes(upload.id);
     const result = await this.provider.extract({

@@ -16,6 +16,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { receiptSchema } from '@vellum/extraction';
 import { MockProvider } from '@vellum/extraction/providers/mock';
+import { BudgetService, EXTRACTION_BUDGET_LIMIT_USD } from '../budget/budget.service.js';
 import { ExtractionsController } from './extractions.controller.js';
 import { ExtractionsService, EXTRACTION_PROVIDER } from './extractions.service.js';
 import { ExtractionWorker } from './extraction.worker.js';
@@ -70,6 +71,8 @@ class TestInfraModule {
         { provide: EXTRACTION_PROVIDER, useValue: provider },
         { provide: EXTRACTION_QUEUE, useValue: queue },
         { provide: QUEUE_REDIS_URL, useValue: redisUrl },
+        { provide: EXTRACTION_BUDGET_LIMIT_USD, useValue: null },
+        BudgetService,
         AuthGuard,
         UploadsService,
         ExtractionsService,
