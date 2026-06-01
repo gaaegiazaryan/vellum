@@ -102,10 +102,8 @@ The image runs `node dist/main.js` as PID 1 with `NODE_ENV=production`. It carri
       -e AUTH_URL=https://your-domain \
       -p 3000:3000 vellum-web
 
-Two quirks worth knowing about the web build:
-
 - `next build` evaluates route handlers to collect page data. `getDb` in `apps/web/src/db/client.ts` returns a postgres-js client with a placeholder url when `DATABASE_URL` is unset and `NEXT_PHASE` flags the build phase (postgres-js does not actually connect until the first query, so the build never reaches a connection attempt). Real `DATABASE_URL` and `AUTH_SECRET` come from the deploy env at runtime.
-- The image is not built with `pnpm deploy --prod` because `next start` reads `next.config.ts` at runtime, which needs `typescript` (a devDependency). Converting `next.config.ts` to `.js` and trimming dev deps back out is a planned follow-up that will shrink the image.
+- `apps/web/next.config.mjs` is ESM JavaScript, not TypeScript, so `next start` does not need `typescript` at runtime and the Dockerfile keeps `pnpm deploy --prod`.
 
 6. What this guide does not cover yet
 
@@ -113,7 +111,6 @@ Two quirks worth knowing about the web build:
 
 The following are real concerns we will document properly before the project is usable:
 
-- A slimmer web image. The current Docker build keeps devDependencies because `next.config.ts` needs `typescript` at runtime; converting it to `.js` and re-enabling `pnpm deploy --prod` shrinks the image.
 - Bind addresses and reverse-proxy headers. The api listens on `0.0.0.0` and trusts proxy headers (`trustProxy: true` in the Fastify adapter); your reverse proxy needs to set `X-Forwarded-For` and `X-Forwarded-Proto`.
 - Session cookie domain. If web and api are on the same parent domain, the cookie just works. If they are on unrelated domains, you need a different cookie strategy and we will write that ADR when the situation arises.
 - Email delivery. Auth.js verification and password reset both need a working transactional email provider. We default to Resend but the configuration is not yet exposed via env.

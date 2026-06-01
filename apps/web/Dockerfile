@@ -25,11 +25,9 @@ COPY packages/core ./packages/core
 # build phase, so next build can collect page data without real env.
 ENV NODE_ENV=production
 RUN pnpm --filter @vellum/web build
-# Skip --prod: next start reads next.config.ts at runtime, which
-# needs typescript (a devDependency). Keeping all deps makes the
-# image bigger but trivially correct; converting next.config.ts to
-# .js and re-introducing --prod is a follow-up.
-RUN pnpm --filter @vellum/web --legacy deploy /deploy/web
+# next.config.mjs is ESM JavaScript, so next start does not need
+# typescript at runtime and --prod is safe to keep.
+RUN pnpm --filter @vellum/web --legacy deploy --prod /deploy/web
 
 FROM base AS runtime
 WORKDIR /app
