@@ -20,12 +20,9 @@ FROM deps AS build
 COPY tsconfig.base.json ./
 COPY apps/web ./apps/web
 COPY packages/core ./packages/core
-# next build "collects page data" by evaluating route handlers, which
-# read DATABASE_URL and AUTH_SECRET at module load. Real values come
-# at runtime; the build needs placeholders so loadEnv doesn't throw.
-# Making env-validation lazy in the auth route is a follow-up.
-ENV DATABASE_URL=postgres://placeholder:placeholder@127.0.0.1:5432/placeholder
-ENV AUTH_SECRET=placeholderplaceholderplaceholder
+# getDb in apps/web/src/db/client.ts returns a postgres-js client with a
+# placeholder URL when DATABASE_URL is unset and NEXT_PHASE flags the
+# build phase, so next build can collect page data without real env.
 ENV NODE_ENV=production
 RUN pnpm --filter @vellum/web build
 # Skip --prod: next start reads next.config.ts at runtime, which
