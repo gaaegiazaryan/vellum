@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import fastifyMultipart from '@fastify/multipart';
 import { AppModule } from './app.module.js';
@@ -16,6 +17,7 @@ async function bootstrap(): Promise<void> {
     { bufferLogs: true },
   );
   app.useLogger(app.get(PinoLogger));
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   await app.register(fastifyMultipart, {
     limits: {
