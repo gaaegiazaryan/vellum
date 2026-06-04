@@ -21,6 +21,7 @@ import { accounts, journalEntries, ledgerLines } from '../db/schema/ledger.js';
 import { BudgetService } from '../budget/budget.service.js';
 import { EXTRACTION_QUEUE, type ExtractionJobData } from '../queue/queue.module.js';
 import { UploadsService } from '../uploads/uploads.service.js';
+import { ExtractionEventsService } from '../websocket/extraction-events.service.js';
 
 export const EXTRACTION_PROVIDER = Symbol('EXTRACTION_PROVIDER');
 
@@ -97,6 +98,7 @@ export class ExtractionsService {
     @Inject(EXTRACTION_QUEUE) private readonly queue: Queue,
     private readonly uploadsService: UploadsService,
     private readonly budget: BudgetService,
+    private readonly events: ExtractionEventsService,
   ) {}
 
   /**
@@ -205,6 +207,9 @@ export class ExtractionsService {
         completedAt: result.extractedAt,
       })
       .where(eq(extractions.id, extractionId));
+    await this.events
+      .publish({ extractionId, status, at: new Date().toISOString() })
+      .catch(() => {});
   }
 
   /**
@@ -223,6 +228,9 @@ export class ExtractionsService {
         completedAt: new Date(),
       })
       .where(eq(extractions.id, extractionId));
+    await this.events
+      .publish({ extractionId, status: 'failed', at: new Date().toISOString() })
+      .catch(() => {});
   }
 
   async findById(id: string): Promise<ExtractionRow | null> {
