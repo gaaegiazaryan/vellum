@@ -8,9 +8,12 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '../auth/auth.guard.js';
+import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import { Idempotent } from '../idempotency/idempotency.decorator.js';
 import {
   AccountsService,
@@ -18,6 +21,7 @@ import {
   type AccountBalance,
   type AccountRow,
   type CreateAccountInput,
+  type VendorSuggestions,
 } from './accounts.service.js';
 
 @Controller('accounts')
@@ -41,6 +45,18 @@ export class AccountsController {
   async list(): Promise<{ accounts: AccountRow[] }> {
     const rows = await this.accounts.findAll();
     return { accounts: rows };
+  }
+
+  @Get('suggest')
+  async suggest(
+    @Query('vendor') vendor: string | undefined,
+    @CurrentUser() user: AuthenticatedUser | undefined,
+  ): Promise<VendorSuggestions> {
+    if (!user) throw new UnauthorizedException();
+    if (typeof vendor !== 'string' || vendor.trim() === '') {
+      throw new BadRequestException({ error: 'vendor query parameter is required' });
+    }
+    return this.accounts.suggestForVendor(user.id, vendor);
   }
 
   @Get(':id')

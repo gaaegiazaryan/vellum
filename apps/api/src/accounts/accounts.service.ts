@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { normalBalanceFor, type AccountType, type Side } from '@vellum/core';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
 import { accounts, ledgerLines } from '../db/schema/ledger.js';
+import { extractions } from '../db/schema/extractions.js';
 
 export const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'] as const;
 
@@ -127,6 +128,61 @@ export class AccountsService {
       totals,
     };
   }
+
+  /**
+   * Suggest a debit account and a credit account for `vendor` based on the
+   * user's own confirmed history (ADR-0013). For each side, returns the
+   * account most frequently used on that side across confirmed extractions
+   * whose receipt vendor name matches (case-insensitive, trimmed). Ties
+   * break by the most recent journal entry. Returns null per side when the
+   * user has no matching history.
+   */
+  async suggestForVendor(userId: string, vendor: string): Promise<VendorSuggestions> {
+    const needle = vendor.trim();
+    if (!needle) return { debit: null, credit: null };
+
+    const rows = await this.db
+      .select({
+        side: ledgerLines.side,
+        accountId: ledgerLines.accountId,
+        count: sql<string>`count(*)::text`,
+        recent: sql<string>`max(je.occurred_at)::text`,
+      })
+      .from(extractions)
+      .innerJoin(sql`journal_entries je`, sql`je.id = ${extractions.journalEntryId}`)
+      .innerJoin(ledgerLines, eq(ledgerLines.journalEntryId, extractions.journalEntryId))
+      .where(
+        sql`${extractions.createdById} = ${userId}
+          and ${extractions.journalEntryId} is not null
+          and lower(btrim(${extractions.receipt}->'vendor'->>'name')) = lower(${needle})`,
+      )
+      .groupBy(ledgerLines.side, ledgerLines.accountId);
+
+    const pickTop = (side: 'DEBIT' | 'CREDIT'): AccountSuggestion | null => {
+      const candidates = rows.filter((r) => r.side === side);
+      if (candidates.length === 0) return null;
+      candidates.sort((a, b) => {
+        const ca = Number(a.count);
+        const cb = Number(b.count);
+        if (cb !== ca) return cb - ca;
+        return (b.recent ?? '').localeCompare(a.recent ?? '');
+      });
+      const top = candidates[0]!;
+      return { accountId: top.accountId, count: Number(top.count) };
+    };
+
+    return { debit: pickTop('DEBIT'), credit: pickTop('CREDIT') };
+  }
+}
+
+export interface AccountSuggestion {
+  accountId: string;
+  count: number;
+}
+
+export interface VendorSuggestions {
+  debit: AccountSuggestion | null;
+  credit: AccountSuggestion | null;
 }
 
 export interface AccountBalance {
