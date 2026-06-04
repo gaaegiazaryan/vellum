@@ -24,3 +24,4 @@ An accepted ADR is immutable. If we change our minds, we write a new ADR that su
 - [0009](./0009-production-build.md): Production build for the api
 - [0010](./0010-bundle-metadata-emission.md): Bundle decorator metadata emission
 - [0011](./0011-extraction-budget.md): Daily budget cap on extraction spend
+- [0012](./0012-websocket-status.md): WebSocket-pushed extraction status
