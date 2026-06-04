@@ -36,6 +36,11 @@ interface AccountRow {
   type: string;
 }
 
+interface VendorSuggestions {
+  debit: { accountId: string; count: number } | null;
+  credit: { accountId: string; count: number } | null;
+}
+
 function formatMinor(minor: string, currency: string): string {
   return `${currency} ${minorToMajor(minor)}`;
 }
@@ -149,6 +154,16 @@ export default async function ReviewExtractionPage({
     throw err;
   }
 
+  // Suggestion is a nice-to-have: a slow or missing /accounts/suggest must
+  // not break the confirm flow. Fall back to no pre-fill on any failure.
+  let suggestions: VendorSuggestions = { debit: null, credit: null };
+  try {
+    const query = new URLSearchParams({ vendor: receipt.vendor.name }).toString();
+    suggestions = await client.get<VendorSuggestions>(`/accounts/suggest?${query}`);
+  } catch {
+    suggestions = { debit: null, credit: null };
+  }
+
   return (
     <main className="ledger">
       <header className="ledger-header">
@@ -195,6 +210,8 @@ export default async function ReviewExtractionPage({
           defaultTotal={minorToMajor(receipt.totalMinor)}
           defaultOccurredAt={new Date(receipt.occurredAt).toISOString().slice(0, 10)}
           defaultCurrency={receipt.currency}
+          suggestedDebitId={suggestions.debit?.accountId ?? null}
+          suggestedCreditId={suggestions.credit?.accountId ?? null}
         />
       )}
     </main>

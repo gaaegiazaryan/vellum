@@ -19,6 +19,8 @@ export function ConfirmForm({
   defaultTotal,
   defaultOccurredAt,
   defaultCurrency,
+  suggestedDebitId,
+  suggestedCreditId,
 }: {
   extractionId: string;
   accounts: AccountOption[];
@@ -26,7 +28,16 @@ export function ConfirmForm({
   defaultTotal: string;
   defaultOccurredAt: string;
   defaultCurrency: string;
+  suggestedDebitId?: string | null;
+  suggestedCreditId?: string | null;
 }) {
+  // Only honor a suggestion if it points at an account that actually exists
+  // in the chart we just rendered; an orphaned id would silently render as
+  // "no selection" and confuse the user.
+  const accountIds = new Set(accounts.map((a) => a.id));
+  const debitDefault = suggestedDebitId && accountIds.has(suggestedDebitId) ? suggestedDebitId : '';
+  const creditDefault =
+    suggestedCreditId && accountIds.has(suggestedCreditId) ? suggestedCreditId : '';
   const [state, formAction, pending] = useActionState(confirmExtractionAction, INITIAL);
 
   return (
@@ -65,7 +76,7 @@ export function ConfirmForm({
 
       <label>
         <span>Debit (expense account)</span>
-        <select name="debitAccountId" defaultValue="" required>
+        <select name="debitAccountId" defaultValue={debitDefault} required>
           <option value="" disabled>
             select account
           </option>
@@ -79,7 +90,7 @@ export function ConfirmForm({
 
       <label>
         <span>Credit (paid from)</span>
-        <select name="creditAccountId" defaultValue="" required>
+        <select name="creditAccountId" defaultValue={creditDefault} required>
           <option value="" disabled>
             select account
           </option>
