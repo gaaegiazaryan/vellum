@@ -1,0 +1,78 @@
+name: Scheduled merge
+
+# Cron-driven replacement for nohup-based overnight merges. Add a
+# label of the form `merge-after:YYYY-MM-DDTHH:MM:SSZ` to any open PR;
+# this workflow runs every five minutes, finds PRs whose label time is
+# in the past, and squash-merges them. Label time is UTC. CI must
+# already be green; the merge fails loud if it is not.
+#
+# Manual run via Actions tab is also supported (workflow_dispatch).
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge_due:
+    name: Squash any PR whose merge-after time has passed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find and merge due PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          now_epoch=$(date -u +%s)
+          echo "now (UTC epoch): ${now_epoch}"
+
+          # Pull every open PR with its labels in one call.
+          gh pr list \
+            --state open --limit 100 \
+            --json number,title,labels \
+            > /tmp/prs.json
+
+          # Emit "pr<TAB>label" for every merge-after label found.
+          jq -r '
+            .[] as $pr | $pr.labels[]?
+            | select(.name | startswith("merge-after:"))
+            | "\($pr.number)\t\(.name)"
+          ' /tmp/prs.json > /tmp/due-candidates.tsv
+
+          if [ ! -s /tmp/due-candidates.tsv ]; then
+            echo "no scheduled merges found"
+            exit 0
+          fi
+
+          merged=0
+          skipped=0
+
+          while IFS=$'\t' read -r pr_num label; do
+            ts="${label#merge-after:}"
+            target_epoch=$(date -u -d "$ts" +%s 2>/dev/null || echo "")
+            if [ -z "$target_epoch" ]; then
+              echo "skip PR #${pr_num}: cannot parse label '${label}'"
+              skipped=$((skipped + 1))
+              continue
+            fi
+            if [ "$now_epoch" -lt "$target_epoch" ]; then
+              echo "PR #${pr_num} not due yet ($((target_epoch - now_epoch))s remaining)"
+              continue
+            fi
+            echo "merging PR #${pr_num} (scheduled ${ts})"
+            if gh pr merge "${pr_num}" --squash --delete-branch; then
+              merged=$((merged + 1))
+              # Best-effort: drop the label so a re-run does not chase it.
+              gh pr edit "${pr_num}" --remove-label "${label}" || true
+            else
+              echo "merge failed for PR #${pr_num}; leaving label in place"
+              skipped=$((skipped + 1))
+            fi
+          done < /tmp/due-candidates.tsv
+
+          echo "summary: merged=${merged} skipped=${skipped}"
