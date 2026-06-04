@@ -242,4 +242,140 @@ describe('AccountsController (integration)', () => {
       expect(res.statusCode).toBe(404);
     });
   });
+
+  describe('GET /accounts/suggest', () => {
+    let coffeeId: string;
+    let teaId: string;
+    let cardId: string;
+
+    beforeAll(async () => {
+      const coffee = await post(
+        { code: '5100-coffee', name: 'Meals & Coffee', type: 'EXPENSE' },
+        'idem-sugg-coffee',
+      );
+      const tea = await post(
+        { code: '5101-tea', name: 'Tea & Snacks', type: 'EXPENSE' },
+        'idem-sugg-tea',
+      );
+      const card = await post(
+        { code: '2200-card', name: 'Credit Card', type: 'LIABILITY' },
+        'idem-sugg-card',
+      );
+      coffeeId = (coffee.json() as { id: string }).id;
+      teaId = (tea.json() as { id: string }).id;
+      cardId = (card.json() as { id: string }).id;
+
+      await sql`INSERT INTO uploads (id, storage_key, mime_type, size_bytes, sha256, created_by_id)
+                VALUES ('upl_sugg_seed', 'sugg/key', 'image/png', 1, 'sugg-hash', 'usr_test')`;
+
+      const seed = async (
+        eid: string,
+        jeId: string,
+        vendor: string,
+        debit: string,
+        occurred: string,
+      ) => {
+        const receipt = JSON.stringify({ vendor: { name: vendor } });
+        await sql`INSERT INTO journal_entries (id, occurred_at, description, currency, created_by_id)
+                  VALUES (${jeId}, ${occurred}::timestamptz, ${vendor}, 'USD', 'usr_test')`;
+        await sql`INSERT INTO ledger_lines (journal_entry_id, account_id, side, amount, position)
+                  VALUES (${jeId}, ${debit}, 'DEBIT', 500, 0),
+                         (${jeId}, ${cardId}, 'CREDIT', 500, 1)`;
+        await sql`INSERT INTO extractions (id, upload_id, provider, model, prompt_version,
+                                            request_hash, status, receipt, created_by_id,
+                                            journal_entry_id, confirmed_by_id, confirmed_at)
+                  VALUES (${eid}, 'upl_sugg_seed', 'mock', 'mock', 'v1',
+                          ${eid + '-hash'}, 'succeeded',
+                          ${receipt}::jsonb,
+                          'usr_test', ${jeId}, 'usr_test', ${occurred}::timestamptz)`;
+      };
+
+      // Blue Bottle: coffee x3 (recent), tea x1 (oldest).
+      await seed('ext_bb_1', 'je_bb_1', 'Blue Bottle', coffeeId, '2026-05-10T10:00:00Z');
+      await seed('ext_bb_2', 'je_bb_2', 'Blue Bottle', coffeeId, '2026-05-20T10:00:00Z');
+      await seed('ext_bb_3', 'je_bb_3', 'Blue Bottle', coffeeId, '2026-05-30T10:00:00Z');
+      await seed('ext_bb_4', 'je_bb_4', 'Blue Bottle', teaId, '2026-05-01T10:00:00Z');
+
+      // Tie-break case: Stumptown coffee 2, tea 2 — tea wins by recency.
+      await seed('ext_st_1', 'je_st_1', 'Stumptown', coffeeId, '2026-05-05T10:00:00Z');
+      await seed('ext_st_2', 'je_st_2', 'Stumptown', coffeeId, '2026-05-06T10:00:00Z');
+      await seed('ext_st_3', 'je_st_3', 'Stumptown', teaId, '2026-05-07T10:00:00Z');
+      await seed('ext_st_4', 'je_st_4', 'Stumptown', teaId, '2026-05-08T10:00:00Z');
+    });
+
+    it('returns null for a vendor with no confirmed history', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=Nobody',
+        headers: { cookie },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ debit: null, credit: null });
+    });
+
+    it('returns the most-frequent debit and credit account', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=Blue%20Bottle',
+        headers: { cookie },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as VendorSuggestionsResponse;
+      expect(body.debit).toEqual({ accountId: coffeeId, count: 3 });
+      expect(body.credit).toEqual({ accountId: cardId, count: 4 });
+    });
+
+    it('breaks ties by most recent journal entry', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=Stumptown',
+        headers: { cookie },
+      });
+      const body = res.json() as VendorSuggestionsResponse;
+      expect(body.debit?.accountId).toBe(teaId);
+      expect(body.debit?.count).toBe(2);
+    });
+
+    it('matches case-insensitively and trims', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=' + encodeURIComponent('  blue bottle  '),
+        headers: { cookie },
+      });
+      const body = res.json() as VendorSuggestionsResponse;
+      expect(body.debit?.accountId).toBe(coffeeId);
+    });
+
+    it('rejects a missing vendor with 400', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest',
+        headers: { cookie },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('does not leak across users', async () => {
+      await sql`INSERT INTO users (id, email) VALUES ('usr_other', 'other@example.com')
+                ON CONFLICT (id) DO NOTHING`;
+      const otherToken = await encode({
+        token: { sub: 'usr_other', email: 'other@example.com' },
+        secret: SECRET,
+        salt: 'authjs.session-token',
+        maxAge: 60 * 60,
+      });
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=Blue%20Bottle',
+        headers: { cookie: `authjs.session-token=${otherToken}` },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ debit: null, credit: null });
+    });
+  });
 });
+
+interface VendorSuggestionsResponse {
+  debit: { accountId: string; count: number } | null;
+  credit: { accountId: string; count: number } | null;
+}
