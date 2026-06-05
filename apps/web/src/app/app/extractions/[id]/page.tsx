@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient, ApiError } from '@/lib/api';
 import { ConfirmForm, type AccountOption } from './confirm-form';
-import { AutoRefresh } from './auto-refresh';
+import { StatusListener } from './status-listener';
 
 export const metadata = {
   title: 'Review extraction - Vellum',
@@ -108,7 +108,7 @@ export default async function ReviewExtractionPage({
             <Link href="/app/uploads">back to uploads</Link>
           </p>
         </header>
-        <AutoRefresh />
+        <StatusListener id={extraction.id} />
       </main>
     );
   }

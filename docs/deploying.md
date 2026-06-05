@@ -24,6 +24,7 @@ A copy of these lives in `.env.example` at the repo root. Set every variable bel
 | `DATABASE_URL`                | yes         | web, api | `postgres://user:pass@host:port/db`. Same value on both services.                                                                       |
 | `AUTH_SECRET`                 | yes         | web, api | At least 32 random bytes. Encrypts the session JWE on web; the api uses it to decrypt the same cookie. **Same value on both services.** |
 | `AUTH_URL`                    | optional    | web      | Public base URL of the web app. Auth.js auto-detects on most hosts.                                                                     |
+| `NEXT_PUBLIC_API_URL`         | optional    | web      | Public origin of the api when web and api are on different domains. Browser connects the extraction-status WebSocket here (ADR-0012).   |
 | `REDIS_URL`                   | yes         | api      | `redis://host:port/db`. Used by BullMQ and the pub/sub fanout.                                                                          |
 | `PORT`                        | optional    | api      | Defaults to `3001`. Set whatever your platform expects.                                                                                 |
 | `NODE_ENV`                    | yes         | web, api | `production` in prod. Switches log format and tightens defaults.                                                                        |
