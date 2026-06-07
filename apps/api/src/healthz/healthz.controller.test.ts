@@ -19,4 +19,15 @@ describe('HealthzController', () => {
     expect(timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     expect(Number.isNaN(Date.parse(timestamp))).toBe(false);
   });
+
+  it('reports a string version (default 0.0.0 when not set)', () => {
+    const { version } = controller.healthz();
+    expect(typeof version).toBe('string');
+    expect(version.length).toBeGreaterThan(0);
+  });
+
+  it('reports commitSha as string or null', () => {
+    const { commitSha } = controller.healthz();
+    expect(commitSha === null || typeof commitSha === 'string').toBe(true);
+  });
 });

@@ -31,8 +31,12 @@ RUN pnpm --filter @vellum/api --legacy deploy --prod /deploy/api
 
 FROM node:20.19.6-alpine AS runtime
 WORKDIR /app
+# Optional build-arg so /healthz can report which commit this image is.
+# Pass at build time: --build-arg GIT_SHA=$(git rev-parse HEAD).
+ARG GIT_SHA=""
 ENV NODE_ENV=production
 ENV PORT=3001
+ENV GIT_SHA=$GIT_SHA
 COPY --from=build /deploy/api/dist ./dist
 COPY --from=build /deploy/api/node_modules ./node_modules
 COPY --from=build /deploy/api/package.json ./package.json
