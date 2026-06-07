@@ -19,27 +19,28 @@ Vellum is pre-alpha. The deployment story below works, but expect rough edges; i
 
 A copy of these lives in `.env.example` at the repo root. Set every variable below in the deploy environment of both the web and the api services.
 
-| Variable                      | Required    | Used by  | Notes                                                                                                                                   |
-| ----------------------------- | ----------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                | yes         | web, api | `postgres://user:pass@host:port/db`. Same value on both services.                                                                       |
-| `AUTH_SECRET`                 | yes         | web, api | At least 32 random bytes. Encrypts the session JWE on web; the api uses it to decrypt the same cookie. **Same value on both services.** |
-| `AUTH_URL`                    | optional    | web      | Public base URL of the web app. Auth.js auto-detects on most hosts.                                                                     |
-| `NEXT_PUBLIC_API_URL`         | optional    | web      | Public origin of the api when web and api are on different domains. Browser connects the extraction-status WebSocket here (ADR-0012).   |
-| `REDIS_URL`                   | yes         | api      | `redis://host:port/db`. Used by BullMQ and the pub/sub fanout.                                                                          |
-| `PORT`                        | optional    | api      | Defaults to `3001`. Set whatever your platform expects.                                                                                 |
-| `NODE_ENV`                    | yes         | web, api | `production` in prod. Switches log format and tightens defaults.                                                                        |
-| `LOG_LEVEL`                   | optional    | api      | `info` by default in prod, `debug` in dev.                                                                                              |
-| `STORAGE_DRIVER`              | optional    | api      | `filesystem` (default) or `s3`. Use `s3` in prod so uploads survive restarts and span replicas (ADR-0008).                              |
-| `UPLOAD_DIR`                  | optional    | api      | Directory the `filesystem` driver writes receipts to. Defaults to `/tmp/vellum-uploads`. Ignored when `STORAGE_DRIVER=s3`.              |
-| `S3_BUCKET`                   | conditional | api      | Required when `STORAGE_DRIVER=s3`. Bucket receipts are written to.                                                                      |
-| `S3_REGION`                   | conditional | api      | Required when `STORAGE_DRIVER=s3`. Use `auto` for Cloudflare R2.                                                                        |
-| `S3_ACCESS_KEY_ID`            | conditional | api      | Required when `STORAGE_DRIVER=s3`.                                                                                                      |
-| `S3_SECRET_ACCESS_KEY`        | conditional | api      | Required when `STORAGE_DRIVER=s3`.                                                                                                      |
-| `S3_ENDPOINT`                 | optional    | api      | Set for S3-compatible providers (R2, B2, MinIO). Leave unset for AWS S3.                                                                |
-| `S3_FORCE_PATH_STYLE`         | optional    | api      | `true` for R2 and MinIO. Defaults to `false` (virtual-host style, AWS S3).                                                              |
-| `EXTRACTION_PROVIDER`         | optional    | api      | `mock` (default) or `anthropic`. Mock skips API calls; anthropic requires `ANTHROPIC_API_KEY`.                                          |
-| `ANTHROPIC_API_KEY`           | conditional | api      | Required when `EXTRACTION_PROVIDER=anthropic`. Get one from anthropic.com.                                                              |
-| `EXTRACTION_DAILY_BUDGET_USD` | optional    | api      | Hard cap on AI spend per UTC day (decimal USD). Unset = no enforcement. `POST /extractions` returns 429 when hit (ADR-0011).            |
+| Variable                      | Required    | Used by  | Notes                                                                                                                                                                            |
+| ----------------------------- | ----------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                | yes         | web, api | `postgres://user:pass@host:port/db`. Same value on both services.                                                                                                                |
+| `AUTH_SECRET`                 | yes         | web, api | At least 32 random bytes. Encrypts the session JWE on web; the api uses it to decrypt the same cookie. **Same value on both services.**                                          |
+| `AUTH_URL`                    | optional    | web      | Public base URL of the web app. Auth.js auto-detects on most hosts.                                                                                                              |
+| `NEXT_PUBLIC_API_URL`         | optional    | web      | Public origin of the api when web and api are on different domains. Browser connects the extraction-status WebSocket here (ADR-0012).                                            |
+| `REDIS_URL`                   | yes         | api      | `redis://host:port/db`. Used by BullMQ and the pub/sub fanout.                                                                                                                   |
+| `PORT`                        | optional    | api      | Defaults to `3001`. Set whatever your platform expects.                                                                                                                          |
+| `NODE_ENV`                    | yes         | web, api | `production` in prod. Switches log format and tightens defaults.                                                                                                                 |
+| `LOG_LEVEL`                   | optional    | api      | `info` by default in prod, `debug` in dev.                                                                                                                                       |
+| `STORAGE_DRIVER`              | optional    | api      | `filesystem` (default) or `s3`. Use `s3` in prod so uploads survive restarts and span replicas (ADR-0008).                                                                       |
+| `UPLOAD_DIR`                  | optional    | api      | Directory the `filesystem` driver writes receipts to. Defaults to `/tmp/vellum-uploads`. Ignored when `STORAGE_DRIVER=s3`.                                                       |
+| `S3_BUCKET`                   | conditional | api      | Required when `STORAGE_DRIVER=s3`. Bucket receipts are written to.                                                                                                               |
+| `S3_REGION`                   | conditional | api      | Required when `STORAGE_DRIVER=s3`. Use `auto` for Cloudflare R2.                                                                                                                 |
+| `S3_ACCESS_KEY_ID`            | conditional | api      | Required when `STORAGE_DRIVER=s3`.                                                                                                                                               |
+| `S3_SECRET_ACCESS_KEY`        | conditional | api      | Required when `STORAGE_DRIVER=s3`.                                                                                                                                               |
+| `S3_ENDPOINT`                 | optional    | api      | Set for S3-compatible providers (R2, B2, MinIO). Leave unset for AWS S3.                                                                                                         |
+| `S3_FORCE_PATH_STYLE`         | optional    | api      | `true` for R2 and MinIO. Defaults to `false` (virtual-host style, AWS S3).                                                                                                       |
+| `EXTRACTION_PROVIDER`         | optional    | api      | `mock` (default) or `anthropic`. Mock skips API calls; anthropic requires `ANTHROPIC_API_KEY`.                                                                                   |
+| `ANTHROPIC_API_KEY`           | conditional | api      | Required when `EXTRACTION_PROVIDER=anthropic`. Get one from anthropic.com.                                                                                                       |
+| `EXTRACTION_DAILY_BUDGET_USD` | optional    | api      | Hard cap on AI spend per UTC day (decimal USD). Unset = no enforcement. `POST /extractions` returns 429 when hit (ADR-0011).                                                     |
+| `GIT_SHA`                     | optional    | api      | Commit sha of the running build, surfaced as `commitSha` on `/healthz`. Set in your image build (e.g., `--build-arg GIT_SHA=$(git rev-parse HEAD)`) so deploys are identifiable. |
 
 Generate `AUTH_SECRET` once and treat it like a database password:
 
@@ -126,7 +127,7 @@ After the migration step finishes and both services are up:
 
     curl https://api.<your-domain>/healthz
 
-should return a 200 with `{"status":"ok","uptimeSeconds":<n>,"timestamp":"..."}`. If you get a 5xx, check the api logs for env validation errors first; `loadEnv` fails loud on missing or malformed configuration.
+should return a 200 with `{"status":"ok","uptimeSeconds":<n>,"timestamp":"...","version":"...","commitSha":"..."}`. The `version` field comes from `apps/api/package.json`; `commitSha` is whatever you passed in the `GIT_SHA` env at image build, or `null` if you did not pass it. If you get a 5xx, check the api logs for env validation errors first; `loadEnv` fails loud on missing or malformed configuration.
 
 The web app at `https://<your-domain>/` should render the landing page in less than a second. The `/api/auth/[...nextauth]` route should respond (even if no providers are wired yet, Auth.js's default error page renders).
 
