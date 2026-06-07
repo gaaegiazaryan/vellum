@@ -50,8 +50,8 @@ export function ConfirmForm({
           name="total"
           type="text"
           inputMode="decimal"
-          pattern="\d+(\.\d{1,2})?"
-          placeholder="0.00"
+          pattern="\d+(\.\d+)?"
+          placeholder={defaultTotal || '0'}
           defaultValue={defaultTotal}
           required
         />
