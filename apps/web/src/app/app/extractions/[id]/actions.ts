@@ -4,31 +4,30 @@ import { randomUUID } from 'node:crypto';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { apiClient, ApiError } from '@/lib/api';
+import {
+  currency,
+  decimalsFor,
+  InvalidCurrencyError,
+  InvalidMajorUnitsError,
+  parseMajorUnits,
+} from '@vellum/core';
 
 export interface ConfirmState {
   error?: string;
 }
 
-// Most ISO 4217 currencies have two minor-unit digits. JPY (0) and a
-// handful with 3 are not covered here; revisit if a user actually needs
-// one of them. Reject anything but a non-negative decimal with at most
-// two fractional digits.
-const MAJOR_AMOUNT = /^\d+(\.\d{1,2})?$/;
-
-function majorToMinor(s: string): string | null {
-  if (!MAJOR_AMOUNT.test(s)) return null;
-  const [whole = '0', frac = ''] = s.split('.');
-  const fracPadded = (frac + '00').slice(0, 2);
-  const minor = BigInt(whole) * 100n + BigInt(fracPadded);
-  return minor.toString();
-}
+// Per-currency major-to-minor conversion. JPY accepts "1000", USD accepts
+// "10.50", BHD accepts "1.000". The granular check happens in @vellum/core's
+// parseMajorUnits; this regex is a permissive sieve so the zod schema can
+// surface a generic error before the per-currency parse runs.
+const MAJOR_AMOUNT_LOOSE = /^\d+(\.\d+)?$/;
 
 const formSchema = z.object({
   extractionId: z.string().uuid(),
   debitAccountId: z.string().uuid('pick an expense account'),
   creditAccountId: z.string().uuid('pick a payment account'),
   description: z.string().trim().max(500).optional(),
-  total: z.string().regex(MAJOR_AMOUNT, 'total must look like 12.34').optional(),
+  total: z.string().regex(MAJOR_AMOUNT_LOOSE, 'total must be a positive decimal').optional(),
   occurredAt: z.string().min(1).optional(),
   currency: z
     .string()
@@ -58,10 +57,35 @@ export async function confirmExtractionAction(
 
   let totalMinor: string | undefined;
   if (parsed.data.total !== undefined) {
-    const m = majorToMinor(parsed.data.total);
-    if (m === null) return { error: 'total must look like 12.34' };
-    if (m === '0') return { error: 'total must be greater than zero' };
-    totalMinor = m;
+    // If currency was not also submitted we cannot know how many minor digits
+    // the amount carries; fall back to the api's per-request currency.
+    const code = parsed.data.currency ?? 'USD';
+    let c;
+    try {
+      c = currency(code);
+    } catch {
+      return { error: 'currency must be a 3-letter code' };
+    }
+    try {
+      const money = parseMajorUnits(parsed.data.total, c);
+      if (money.amount === 0n) return { error: 'total must be greater than zero' };
+      if (money.amount < 0n) return { error: 'total must be positive' };
+      totalMinor = money.amount.toString();
+    } catch (err) {
+      if (err instanceof InvalidMajorUnitsError) {
+        const d = decimalsFor(c);
+        return {
+          error:
+            d === 0
+              ? `total for ${code} must be a whole number`
+              : `total for ${code} must have at most ${d} decimal places`,
+        };
+      }
+      if (err instanceof InvalidCurrencyError) {
+        return { error: 'currency must be a 3-letter code' };
+      }
+      throw err;
+    }
   }
 
   const { extractionId, total: _total, ...rest } = parsed.data;

@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient, ApiError } from '@/lib/api';
+import { Money, currency, formatMinorUnits, InvalidCurrencyError } from '@vellum/core';
 import { ConfirmForm, type AccountOption } from './confirm-form';
 import { StatusListener } from './status-listener';
 
@@ -41,15 +42,29 @@ interface VendorSuggestions {
   credit: { accountId: string; count: number } | null;
 }
 
-function formatMinor(minor: string, currency: string): string {
-  return `${currency} ${minorToMajor(minor)}`;
+// Currency-aware: JPY 1000 renders "JPY 1000", USD 1000 renders "USD 10.00",
+// BHD 1000 renders "BHD 1.000". Unknown codes fall back to 2 decimals via
+// decimalsFor in @vellum/core.
+function formatMinor(minorStr: string, code: string): string {
+  if (!/^-?\d+$/.test(minorStr)) return `${code} ${minorStr}`;
+  let c;
+  try {
+    c = currency(code);
+  } catch (err) {
+    if (err instanceof InvalidCurrencyError) return `${code} ${minorStr}`;
+    throw err;
+  }
+  return `${code} ${formatMinorUnits(new Money(BigInt(minorStr), c))}`;
 }
 
-// 979 -> "9.79", 5 -> "0.05", 100 -> "1.00". Assumes 2 minor digits.
-function minorToMajor(minor: string): string {
-  if (!/^\d+$/.test(minor)) return minor;
-  if (minor.length <= 2) return `0.${minor.padStart(2, '0')}`;
-  return `${minor.slice(0, -2)}.${minor.slice(-2)}`;
+function minorToMajor(minorStr: string, code: string): string {
+  if (!/^-?\d+$/.test(minorStr)) return minorStr;
+  try {
+    return formatMinorUnits(new Money(BigInt(minorStr), currency(code)));
+  } catch (err) {
+    if (err instanceof InvalidCurrencyError) return minorStr;
+    throw err;
+  }
 }
 
 export default async function ReviewExtractionPage({
@@ -207,7 +222,7 @@ export default async function ReviewExtractionPage({
           extractionId={extraction.id}
           accounts={accounts}
           defaultDescription={receipt.vendor.name}
-          defaultTotal={minorToMajor(receipt.totalMinor)}
+          defaultTotal={minorToMajor(receipt.totalMinor, receipt.currency)}
           defaultOccurredAt={new Date(receipt.occurredAt).toISOString().slice(0, 10)}
           defaultCurrency={receipt.currency}
           suggestedDebitId={suggestions.debit?.accountId ?? null}
