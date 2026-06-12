@@ -1,32 +1,35 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { gte, sql } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { BudgetExceededError } from '@vellum/extraction';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
 import { extractions } from '../db/schema/extractions.js';
 
 export const EXTRACTION_BUDGET_LIMIT_USD = Symbol('EXTRACTION_BUDGET_LIMIT_USD');
+export const EXTRACTION_BUDGET_PER_USER_LIMIT_USD = Symbol('EXTRACTION_BUDGET_PER_USER_LIMIT_USD');
 
 /**
- * Enforces the daily extraction spend cap from ADR-0011. The cap is a
- * non-negative decimal string in USD; when null, no enforcement runs
- * and existing behaviour stays unchanged. Today is UTC midnight to UTC
- * midnight; the source of truth is sum(cost_estimated_usd) over today's
- * rows. Comparison happens in scaled BigInt so float rounding does not
- * leak into a money decision.
+ * Enforces the daily extraction spend cap from ADR-0011 (system-wide)
+ * and ADR-0014 (per-user). Either cap is optional; null disables that
+ * scope. Today is UTC midnight to UTC midnight; source of truth is
+ * sum(cost_estimated_usd) over today's rows. Comparison happens in
+ * scaled BigInt so float rounding does not leak into a money decision.
  */
 @Injectable()
 export class BudgetService {
-  private readonly limitScaled: bigint | null;
+  private readonly systemLimitScaled: bigint | null;
+  private readonly userLimitScaled: bigint | null;
 
   constructor(
     @Inject(DATABASE_TOKEN) private readonly db: Db,
-    @Inject(EXTRACTION_BUDGET_LIMIT_USD) limitUsd: string | null,
+    @Inject(EXTRACTION_BUDGET_LIMIT_USD) systemLimitUsd: string | null,
+    @Inject(EXTRACTION_BUDGET_PER_USER_LIMIT_USD) userLimitUsd: string | null,
   ) {
-    this.limitScaled = limitUsd === null ? null : scaleDecimal(limitUsd, 6);
+    this.systemLimitScaled = systemLimitUsd === null ? null : scaleDecimal(systemLimitUsd, 6);
+    this.userLimitScaled = userLimitUsd === null ? null : scaleDecimal(userLimitUsd, 6);
   }
 
   isEnforced(): boolean {
-    return this.limitScaled !== null;
+    return this.systemLimitScaled !== null || this.userLimitScaled !== null;
   }
 
   async todaySpendUsd(): Promise<string> {
@@ -40,17 +43,38 @@ export class BudgetService {
     return rows[0]?.total ?? '0';
   }
 
+  async todaySpendUsdByUser(userId: string): Promise<string> {
+    const since = startOfTodayUtc();
+    const rows = await this.db
+      .select({
+        total: sql<string>`COALESCE(sum(${extractions.costEstimatedUsd}), 0)::text`,
+      })
+      .from(extractions)
+      .where(and(gte(extractions.createdAt, since), eq(extractions.createdById, userId)));
+    return rows[0]?.total ?? '0';
+  }
+
   /**
    * Throws BudgetExceededError when today's already-recorded spend
-   * reaches or exceeds the cap. Callers (POST /extractions, the
-   * worker before provider.extract) both fail fast on this path.
+   * reaches or exceeds the relevant cap. When userId is provided and
+   * the per-user cap is configured, the user scope is checked first so
+   * the 429 surfaces the most actionable cause; the system cap covers
+   * the case where many users together fill the wallet.
    */
-  async assertWithinBudget(): Promise<void> {
-    if (this.limitScaled === null) return;
-    const spent = await this.todaySpendUsd();
-    const spentScaled = scaleDecimal(spent, 6);
-    if (spentScaled >= this.limitScaled) {
-      throw new BudgetExceededError(unscaleDecimal(this.limitScaled, 6), spent);
+  async assertWithinBudget(userId?: string | null): Promise<void> {
+    if (userId && this.userLimitScaled !== null) {
+      const spent = await this.todaySpendUsdByUser(userId);
+      const spentScaled = scaleDecimal(spent, 6);
+      if (spentScaled >= this.userLimitScaled) {
+        throw new BudgetExceededError(unscaleDecimal(this.userLimitScaled, 6), spent, 'user');
+      }
+    }
+    if (this.systemLimitScaled !== null) {
+      const spent = await this.todaySpendUsd();
+      const spentScaled = scaleDecimal(spent, 6);
+      if (spentScaled >= this.systemLimitScaled) {
+        throw new BudgetExceededError(unscaleDecimal(this.systemLimitScaled, 6), spent, 'system');
+      }
     }
   }
 

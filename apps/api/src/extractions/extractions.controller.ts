@@ -75,6 +75,7 @@ export class ExtractionsController {
         throw new HttpException(
           {
             error: 'budget_exceeded',
+            scope: err.scope,
             limitUsd: err.limitUsd,
             spentUsd: err.accumulatedUsd,
             resetAt: resetAt.toISOString(),

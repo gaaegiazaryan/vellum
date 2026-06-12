@@ -135,7 +135,7 @@ export class ExtractionsService {
 
     // Cheap, client-facing check. The worker re-checks before each
     // provider call so a long queue cannot quietly slip past the cap.
-    await this.budget.assertWithinBudget();
+    await this.budget.assertWithinBudget(args.userId);
 
     const [row] = await this.db
       .insert(extractions)
@@ -182,8 +182,10 @@ export class ExtractionsService {
     if (!upload) throw new Error(`upload ${row.uploadId} for extraction ${extractionId} not found`);
 
     // Re-check the daily cap right before the provider call so a job
-    // queued under-budget cannot run after the cap was hit.
-    await this.budget.assertWithinBudget();
+    // queued under-budget cannot run after the cap was hit. The row
+    // remembers who enqueued it so per-user scope still applies in
+    // the worker (created_by_id is nullable for legacy rows).
+    await this.budget.assertWithinBudget(row.createdById ?? undefined);
 
     const buffer = await this.uploadsService.getBytes(upload.id);
     const result = await this.provider.extract({

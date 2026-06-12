@@ -37,11 +37,17 @@ export class InvalidProviderResponseError extends ExtractionError {
   }
 }
 
+export type BudgetScope = 'system' | 'user';
+
 export class BudgetExceededError extends ExtractionError {
+  readonly scope: BudgetScope;
+
   constructor(
     readonly limitUsd: string,
     readonly accumulatedUsd: string,
+    scope: BudgetScope = 'system',
   ) {
-    super(`extraction budget exceeded: ${accumulatedUsd} / ${limitUsd}`);
+    super(`extraction ${scope} budget exceeded: ${accumulatedUsd} / ${limitUsd}`);
+    this.scope = scope;
   }
 }
