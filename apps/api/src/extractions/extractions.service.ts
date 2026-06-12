@@ -38,7 +38,8 @@ export function isRetryableExtractionError(err: unknown): boolean {
   return true;
 }
 
-const CONFIDENCE_REVIEW_THRESHOLD = 0.7;
+export const CONFIDENCE_REVIEW_THRESHOLD_TOKEN = Symbol('CONFIDENCE_REVIEW_THRESHOLD');
+export const DEFAULT_CONFIDENCE_REVIEW_THRESHOLD = 0.7;
 
 export interface ExtractionRow {
   id: string;
@@ -96,6 +97,7 @@ export class ExtractionsService {
     @Inject(DATABASE_TOKEN) private readonly db: Db,
     @Inject(EXTRACTION_PROVIDER) private readonly provider: ExtractionProvider,
     @Inject(EXTRACTION_QUEUE) private readonly queue: Queue,
+    @Inject(CONFIDENCE_REVIEW_THRESHOLD_TOKEN) private readonly reviewThreshold: number,
     private readonly uploadsService: UploadsService,
     private readonly budget: BudgetService,
     private readonly events: ExtractionEventsService,
@@ -196,7 +198,7 @@ export class ExtractionsService {
       mimeType: upload.mimeType as 'image/png' | 'image/jpeg' | 'image/webp',
     });
 
-    const status = result.confidence >= CONFIDENCE_REVIEW_THRESHOLD ? 'succeeded' : 'needs_review';
+    const status = result.confidence >= this.reviewThreshold ? 'succeeded' : 'needs_review';
     await this.db
       .update(extractions)
       .set({
@@ -410,7 +412,8 @@ function rowFromDb(r: typeof extractions.$inferSelect): ExtractionRow {
 }
 
 /**
- * Helper used by tests + by service when caller needs to track the
- * confidence cutoff out of band.
+ * Backward-compatible re-export. Production threads the threshold
+ * through DI; this constant is the unconfigured default and is the
+ * one callers should reach for when they need a sentinel value.
  */
-export { CONFIDENCE_REVIEW_THRESHOLD };
+export const CONFIDENCE_REVIEW_THRESHOLD = DEFAULT_CONFIDENCE_REVIEW_THRESHOLD;
