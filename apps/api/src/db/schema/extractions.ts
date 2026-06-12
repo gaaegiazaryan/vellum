@@ -77,6 +77,15 @@ export const extractions = pgTable(
     index('extractions_created_by_idx').on(table.createdById),
     index('extractions_status_idx').on(table.status),
     index('extractions_journal_entry_idx').on(table.journalEntryId),
+    // Partial composite index for /accounts/suggest: the query filters
+    // by (created_by_id, journal_entry_id is not null) before grouping
+    // by ledger lines. As confirmed history grows, this is the hot
+    // path; a partial index keeps it smaller than a plain composite
+    // would by excluding the never-confirmed rows that dominate the
+    // table for users mid-onboarding.
+    index('extractions_created_by_confirmed_idx')
+      .on(table.createdById)
+      .where(sql`${table.journalEntryId} is not null`),
   ],
 );
 

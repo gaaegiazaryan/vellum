@@ -57,6 +57,13 @@
       "when": 1779342016486,
       "tag": "0007_extraction_confirm",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781244924629,
+      "tag": "0008_tan_makkari",
+      "breakpoints": true
     }
   ]
 }

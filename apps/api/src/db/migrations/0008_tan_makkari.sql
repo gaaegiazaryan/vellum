@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "extractions_created_by_confirmed_idx" ON "extractions" USING btree ("created_by_id") WHERE "extractions"."journal_entry_id" is not null;
