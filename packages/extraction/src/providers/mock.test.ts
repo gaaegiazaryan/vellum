@@ -88,4 +88,8 @@ describe('MockProvider', () => {
     });
     expect(a.rawResponseHash).not.toBe(b.rawResponseHash);
   });
+
+  it('predictedMaxCostUsd is "0" so mock never blocks the budget', () => {
+    expect(new MockProvider().predictedMaxCostUsd()).toBe('0');
+  });
 });

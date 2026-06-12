@@ -135,7 +135,10 @@ export class ExtractionsService {
 
     // Cheap, client-facing check. The worker re-checks before each
     // provider call so a long queue cannot quietly slip past the cap.
-    await this.budget.assertWithinBudget(args.userId);
+    // The predicted cost closes the in-flight race: a cap with a few
+    // cents of headroom would otherwise admit several jobs that each
+    // tip it over.
+    await this.budget.assertWithinBudget(args.userId, this.provider.predictedMaxCostUsd());
 
     const [row] = await this.db
       .insert(extractions)

@@ -171,3 +171,32 @@ describe('estimateCost', () => {
     expect(c.outputTokens).toBe(350);
   });
 });
+
+describe('AnthropicProvider.predictedMaxCostUsd', () => {
+  it('uses the configured model rates for the per-call upper bound', () => {
+    const sonnet = new AnthropicProvider({
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-5-20251022',
+    });
+    // 2500 input * 3 / 1M + 2048 output * 15 / 1M = 0.007500 + 0.030720 = 0.038220
+    expect(sonnet.predictedMaxCostUsd()).toBe('0.038220');
+  });
+
+  it('haiku predicts a smaller upper bound than sonnet', () => {
+    const haiku = new AnthropicProvider({ apiKey: 'sk-test', model: 'claude-haiku-4-20251022' });
+    const sonnet = new AnthropicProvider({
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-5-20251022',
+    });
+    expect(Number(haiku.predictedMaxCostUsd())).toBeLessThan(Number(sonnet.predictedMaxCostUsd()));
+  });
+
+  it('falls back to the most expensive priced model for unknown names', () => {
+    const unknown = new AnthropicProvider({
+      apiKey: 'sk-test',
+      model: 'claude-future-edition-2099',
+    });
+    // opus is the most expensive: 2500*15/1M + 2048*75/1M = 0.0375 + 0.1536 = 0.191100
+    expect(unknown.predictedMaxCostUsd()).toBe('0.191100');
+  });
+});

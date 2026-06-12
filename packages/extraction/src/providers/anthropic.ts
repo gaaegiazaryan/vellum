@@ -127,6 +127,30 @@ export class AnthropicProvider implements ExtractionProvider {
       rawResponseHash: createHash('sha256').update(rawText).digest('hex'),
     };
   }
+
+  /**
+   * Conservative upper bound for one extract call: an image-bearing
+   * vision prompt rarely exceeds ~2500 input tokens (image + text), and
+   * the response is capped at maxTokens by construction. When the model
+   * is unknown to PRICING (operator pinned a name we have not priced),
+   * fall back to the most expensive priced row so the predicted budget
+   * bite cannot understate the real cost.
+   */
+  predictedMaxCostUsd(): string {
+    const inputTokensEstimate = 2500;
+    const rates = PRICING[this.model] ?? worstCaseRates();
+    const usd =
+      (inputTokensEstimate * rates.input) / 1_000_000 + (this.maxTokens * rates.output) / 1_000_000;
+    return usd.toFixed(6);
+  }
+}
+
+function worstCaseRates(): { input: number; output: number } {
+  let worst = { input: 0, output: 0 };
+  for (const r of Object.values(PRICING)) {
+    if (r.input + r.output > worst.input + worst.output) worst = r;
+  }
+  return worst;
 }
 
 function imageBlockFor(input: ExtractionInput): Anthropic.ImageBlockParam {

@@ -55,24 +55,31 @@ export class BudgetService {
   }
 
   /**
-   * Throws BudgetExceededError when today's already-recorded spend
+   * Throws BudgetExceededError when (today's spend + predictedAddUsd)
    * reaches or exceeds the relevant cap. When userId is provided and
    * the per-user cap is configured, the user scope is checked first so
    * the 429 surfaces the most actionable cause; the system cap covers
    * the case where many users together fill the wallet.
+   *
+   * predictedAddUsd closes the race where the cap had a few cents of
+   * headroom and each in-flight job would tip it over. Callers pass
+   * the provider's predictedMaxCostUsd() (ADR-0011 known limit #2).
+   * Default '0' preserves the spent-only check used by the worker
+   * re-check, where the provider call is the very next instruction.
    */
-  async assertWithinBudget(userId?: string | null): Promise<void> {
+  async assertWithinBudget(userId?: string | null, predictedAddUsd: string = '0'): Promise<void> {
+    const predictedScaled = scaleDecimal(predictedAddUsd, 6);
     if (userId && this.userLimitScaled !== null) {
       const spent = await this.todaySpendUsdByUser(userId);
       const spentScaled = scaleDecimal(spent, 6);
-      if (spentScaled >= this.userLimitScaled) {
+      if (spentScaled + predictedScaled >= this.userLimitScaled) {
         throw new BudgetExceededError(unscaleDecimal(this.userLimitScaled, 6), spent, 'user');
       }
     }
     if (this.systemLimitScaled !== null) {
       const spent = await this.todaySpendUsd();
       const spentScaled = scaleDecimal(spent, 6);
-      if (spentScaled >= this.systemLimitScaled) {
+      if (spentScaled + predictedScaled >= this.systemLimitScaled) {
         throw new BudgetExceededError(unscaleDecimal(this.systemLimitScaled, 6), spent, 'system');
       }
     }
