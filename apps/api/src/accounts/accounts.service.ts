@@ -133,12 +133,15 @@ export class AccountsService {
    * Suggest a debit account and a credit account for `vendor` based on the
    * user's own confirmed history (ADR-0013). For each side, returns the
    * account most frequently used on that side across confirmed extractions
-   * whose receipt vendor name matches (case-insensitive, trimmed). Ties
-   * break by the most recent journal entry. Returns null per side when the
-   * user has no matching history.
+   * whose receipt vendor name matches under a deliberately small set of
+   * normalizations: lowercase, trim, collapse internal whitespace. This
+   * fixes the OCR variant case ("Blue Bottle" vs "Blue  Bottle") without
+   * the unpredictability of fuzzy matching. Ties break by the most recent
+   * journal entry. Returns null per side when the user has no matching
+   * history. (ADR-0013 known limit #1.)
    */
   async suggestForVendor(userId: string, vendor: string): Promise<VendorSuggestions> {
-    const needle = vendor.trim();
+    const needle = normalizeVendor(vendor);
     if (!needle) return { debit: null, credit: null };
 
     const rows = await this.db
@@ -154,7 +157,7 @@ export class AccountsService {
       .where(
         sql`${extractions.createdById} = ${userId}
           and ${extractions.journalEntryId} is not null
-          and lower(btrim(${extractions.receipt}->'vendor'->>'name')) = lower(${needle})`,
+          and regexp_replace(lower(btrim(${extractions.receipt}->'vendor'->>'name')), '\\s+', ' ', 'g') = ${needle}`,
       )
       .groupBy(ledgerLines.side, ledgerLines.accountId);
 
@@ -197,6 +200,15 @@ export interface AccountBalance {
     credits: string;
     balance: string;
   }>;
+}
+
+/**
+ * Lowercase, trim, collapse runs of whitespace to one space. Same
+ * normalization applied DB-side (regexp_replace + lower + btrim) so
+ * both sides of the equality see the same canonical form.
+ */
+export function normalizeVendor(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function isUniqueViolation(err: unknown): boolean {
