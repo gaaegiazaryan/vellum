@@ -23,7 +23,12 @@ import {
 } from '../budget/budget.service.js';
 import { ExtractionEventsService } from '../websocket/extraction-events.service.js';
 import { ExtractionsController } from './extractions.controller.js';
-import { ExtractionsService, EXTRACTION_PROVIDER } from './extractions.service.js';
+import {
+  ExtractionsService,
+  EXTRACTION_PROVIDER,
+  CONFIDENCE_REVIEW_THRESHOLD_TOKEN,
+  DEFAULT_CONFIDENCE_REVIEW_THRESHOLD,
+} from './extractions.service.js';
 import { ExtractionWorker } from './extraction.worker.js';
 import {
   EXTRACTION_QUEUE,
@@ -78,6 +83,10 @@ class TestInfraModule {
         { provide: QUEUE_REDIS_URL, useValue: redisUrl },
         { provide: EXTRACTION_BUDGET_LIMIT_USD, useValue: null },
         { provide: EXTRACTION_BUDGET_PER_USER_LIMIT_USD, useValue: null },
+        {
+          provide: CONFIDENCE_REVIEW_THRESHOLD_TOKEN,
+          useValue: DEFAULT_CONFIDENCE_REVIEW_THRESHOLD,
+        },
         BudgetService,
         ExtractionEventsService,
         AuthGuard,

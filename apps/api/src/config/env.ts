@@ -44,6 +44,11 @@ const envSchema = z
         'EXTRACTION_DAILY_BUDGET_PER_USER_USD must be a non-negative decimal',
       )
       .optional(),
+    EXTRACTION_CONFIDENCE_REVIEW_THRESHOLD: z
+      .string()
+      .regex(/^(0|0\.\d+|1(\.0+)?)$/, 'must be a decimal between 0 and 1 inclusive')
+      .transform((v) => Number(v))
+      .optional(),
   })
   .refine((env) => env.EXTRACTION_PROVIDER !== 'anthropic' || Boolean(env.ANTHROPIC_API_KEY), {
     message: 'EXTRACTION_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set',

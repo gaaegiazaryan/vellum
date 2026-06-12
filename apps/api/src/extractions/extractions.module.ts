@@ -3,7 +3,12 @@ import { MockProvider } from '@vellum/extraction/providers/mock';
 import { AnthropicProvider } from '@vellum/extraction/providers/anthropic';
 import type { ExtractionProvider } from '@vellum/extraction';
 import { ExtractionsController } from './extractions.controller.js';
-import { ExtractionsService, EXTRACTION_PROVIDER } from './extractions.service.js';
+import {
+  ExtractionsService,
+  EXTRACTION_PROVIDER,
+  CONFIDENCE_REVIEW_THRESHOLD_TOKEN,
+  DEFAULT_CONFIDENCE_REVIEW_THRESHOLD,
+} from './extractions.service.js';
 import { ExtractionWorker } from './extraction.worker.js';
 import type { Env } from '../config/env.js';
 
@@ -32,10 +37,15 @@ export class ExtractionsModule {
       controllers: [ExtractionsController],
       providers: [
         { provide: EXTRACTION_PROVIDER, useValue: pickProvider(env) },
+        {
+          provide: CONFIDENCE_REVIEW_THRESHOLD_TOKEN,
+          useValue:
+            env.EXTRACTION_CONFIDENCE_REVIEW_THRESHOLD ?? DEFAULT_CONFIDENCE_REVIEW_THRESHOLD,
+        },
         ExtractionsService,
         ExtractionWorker,
       ],
-      exports: [ExtractionsService, EXTRACTION_PROVIDER],
+      exports: [ExtractionsService, EXTRACTION_PROVIDER, CONFIDENCE_REVIEW_THRESHOLD_TOKEN],
     };
   }
 }
