@@ -15,7 +15,12 @@ const migrationsFolder = resolve(__dirname, '../db/migrations');
 
 const SEED_UPLOAD_ID = 'upl_seed';
 
-async function seedExtraction(db: Db, costUsd: string, createdAt: Date): Promise<void> {
+async function seedExtraction(
+  db: Db,
+  costUsd: string,
+  createdAt: Date,
+  createdById: string | null = null,
+): Promise<void> {
   await db.insert(extractions).values({
     uploadId: SEED_UPLOAD_ID,
     provider: 'mock',
@@ -25,6 +30,7 @@ async function seedExtraction(db: Db, costUsd: string, createdAt: Date): Promise
     costEstimatedUsd: costUsd,
     status: 'succeeded',
     createdAt,
+    createdById,
   });
 }
 
@@ -52,21 +58,27 @@ describe('BudgetService (integration)', () => {
   beforeEach(async () => {
     await sql`DELETE FROM extractions`;
     await sql`DELETE FROM uploads`;
+    await sql`DELETE FROM users WHERE id IN ('usr_alice', 'usr_bob')`;
     await sql`
       INSERT INTO uploads (id, storage_key, mime_type, size_bytes, sha256)
       VALUES (${SEED_UPLOAD_ID}, 'seed-key', 'image/png', 1, repeat('a', 64))
     `;
+    await sql`
+      INSERT INTO users (id, email)
+      VALUES ('usr_alice', 'alice@test'), ('usr_bob', 'bob@test')
+      ON CONFLICT (id) DO NOTHING
+    `;
   });
 
   it('does nothing when no limit is configured', async () => {
-    const svc = new BudgetService(db as unknown as Db, null);
+    const svc = new BudgetService(db as unknown as Db, null, null);
     expect(svc.isEnforced()).toBe(false);
     await seedExtraction(db as unknown as Db, '999.999999', new Date());
     await expect(svc.assertWithinBudget()).resolves.toBeUndefined();
   });
 
   it('returns todaySpend as a sum over rows since UTC midnight', async () => {
-    const svc = new BudgetService(db as unknown as Db, '10');
+    const svc = new BudgetService(db as unknown as Db, '10', null);
     await seedExtraction(db as unknown as Db, '1.23', new Date());
     await seedExtraction(db as unknown as Db, '0.5', new Date());
     const yesterday = new Date(Date.now() - 25 * 60 * 60 * 1000);
@@ -77,7 +89,7 @@ describe('BudgetService (integration)', () => {
   });
 
   it('throws BudgetExceededError when today reaches the cap', async () => {
-    const svc = new BudgetService(db as unknown as Db, '2');
+    const svc = new BudgetService(db as unknown as Db, '2', null);
     await seedExtraction(db as unknown as Db, '1.99', new Date());
     await expect(svc.assertWithinBudget()).resolves.toBeUndefined();
 
@@ -86,17 +98,65 @@ describe('BudgetService (integration)', () => {
   });
 
   it('ignores spend from earlier UTC days', async () => {
-    const svc = new BudgetService(db as unknown as Db, '0.5');
+    const svc = new BudgetService(db as unknown as Db, '0.5', null);
     const yesterday = new Date(Date.now() - 25 * 60 * 60 * 1000);
     await seedExtraction(db as unknown as Db, '999', yesterday);
     await expect(svc.assertWithinBudget()).resolves.toBeUndefined();
   });
 
   it('compares decimals exactly without float drift', async () => {
-    const svc = new BudgetService(db as unknown as Db, '0.1');
+    const svc = new BudgetService(db as unknown as Db, '0.1', null);
     await seedExtraction(db as unknown as Db, '0.099999', new Date());
     await expect(svc.assertWithinBudget()).resolves.toBeUndefined();
     await seedExtraction(db as unknown as Db, '0.000001', new Date());
     await expect(svc.assertWithinBudget()).rejects.toBeInstanceOf(BudgetExceededError);
+  });
+
+  describe('per-user cap (ADR-0014)', () => {
+    it('sums per-user spend independently of other users', async () => {
+      const svc = new BudgetService(db as unknown as Db, null, '5');
+      await seedExtraction(db as unknown as Db, '0.50', new Date(), 'usr_alice');
+      await seedExtraction(db as unknown as Db, '0.30', new Date(), 'usr_alice');
+      await seedExtraction(db as unknown as Db, '4.99', new Date(), 'usr_bob');
+      expect(await svc.todaySpendUsdByUser('usr_alice')).toBe('0.800000');
+      expect(await svc.todaySpendUsdByUser('usr_bob')).toBe('4.990000');
+    });
+
+    it('blocks the user who exceeded the per-user cap', async () => {
+      const svc = new BudgetService(db as unknown as Db, null, '1');
+      await seedExtraction(db as unknown as Db, '0.99', new Date(), 'usr_alice');
+      await expect(svc.assertWithinBudget('usr_alice')).resolves.toBeUndefined();
+      await seedExtraction(db as unknown as Db, '0.02', new Date(), 'usr_alice');
+      await expect(svc.assertWithinBudget('usr_alice')).rejects.toMatchObject({
+        scope: 'user',
+        limitUsd: '1',
+      });
+    });
+
+    it('lets other users through even when one user is over their cap', async () => {
+      const svc = new BudgetService(db as unknown as Db, null, '1');
+      await seedExtraction(db as unknown as Db, '5', new Date(), 'usr_alice');
+      await expect(svc.assertWithinBudget('usr_alice')).rejects.toMatchObject({ scope: 'user' });
+      await expect(svc.assertWithinBudget('usr_bob')).resolves.toBeUndefined();
+    });
+
+    it('checks the user cap before the system cap when both are set', async () => {
+      const svc = new BudgetService(db as unknown as Db, '100', '1');
+      await seedExtraction(db as unknown as Db, '1.5', new Date(), 'usr_alice');
+      await expect(svc.assertWithinBudget('usr_alice')).rejects.toMatchObject({ scope: 'user' });
+    });
+
+    it('falls through to the system cap when the user cap is configured but userId is missing', async () => {
+      const svc = new BudgetService(db as unknown as Db, '2', '1');
+      await seedExtraction(db as unknown as Db, '2.5', new Date(), 'usr_alice');
+      await expect(svc.assertWithinBudget(null)).rejects.toMatchObject({ scope: 'system' });
+    });
+
+    it('ignores per-user spend from earlier UTC days', async () => {
+      const svc = new BudgetService(db as unknown as Db, null, '1');
+      const yesterday = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      await seedExtraction(db as unknown as Db, '999', yesterday, 'usr_alice');
+      await expect(svc.assertWithinBudget('usr_alice')).resolves.toBeUndefined();
+    });
   });
 });

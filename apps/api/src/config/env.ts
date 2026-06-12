@@ -37,6 +37,13 @@ const envSchema = z
       .string()
       .regex(/^\d+(\.\d{1,6})?$/, 'EXTRACTION_DAILY_BUDGET_USD must be a non-negative decimal')
       .optional(),
+    EXTRACTION_DAILY_BUDGET_PER_USER_USD: z
+      .string()
+      .regex(
+        /^\d+(\.\d{1,6})?$/,
+        'EXTRACTION_DAILY_BUDGET_PER_USER_USD must be a non-negative decimal',
+      )
+      .optional(),
   })
   .refine((env) => env.EXTRACTION_PROVIDER !== 'anthropic' || Boolean(env.ANTHROPIC_API_KEY), {
     message: 'EXTRACTION_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set',
