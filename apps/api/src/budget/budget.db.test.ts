@@ -159,4 +159,38 @@ describe('BudgetService (integration)', () => {
       await expect(svc.assertWithinBudget('usr_alice')).resolves.toBeUndefined();
     });
   });
+
+  describe('predicted-cost gate', () => {
+    it('blocks when spent + predicted would breach the system cap even though spent is under', async () => {
+      const svc = new BudgetService(db as unknown as Db, '1', null);
+      await seedExtraction(db as unknown as Db, '0.95', new Date());
+      // Without prediction, this passes (0.95 < 1).
+      await expect(svc.assertWithinBudget()).resolves.toBeUndefined();
+      // With a 0.10 prediction the in-flight call would tip the cap.
+      await expect(svc.assertWithinBudget(null, '0.10')).rejects.toMatchObject({
+        scope: 'system',
+        limitUsd: '1',
+      });
+    });
+
+    it('blocks when spent + predicted would breach the per-user cap', async () => {
+      const svc = new BudgetService(db as unknown as Db, null, '0.5');
+      await seedExtraction(db as unknown as Db, '0.45', new Date(), 'usr_alice');
+      await expect(svc.assertWithinBudget('usr_alice')).resolves.toBeUndefined();
+      await expect(svc.assertWithinBudget('usr_alice', '0.10')).rejects.toMatchObject({
+        scope: 'user',
+      });
+    });
+
+    it('treats predicted = 0 as the old spent-only check', async () => {
+      const svc = new BudgetService(db as unknown as Db, '1', null);
+      await seedExtraction(db as unknown as Db, '0.99', new Date());
+      await expect(svc.assertWithinBudget(null, '0')).resolves.toBeUndefined();
+    });
+
+    it('does not enforce when neither cap is configured', async () => {
+      const svc = new BudgetService(db as unknown as Db, null, null);
+      await expect(svc.assertWithinBudget('usr_alice', '999')).resolves.toBeUndefined();
+    });
+  });
 });

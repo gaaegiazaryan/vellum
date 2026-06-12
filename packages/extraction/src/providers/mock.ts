@@ -71,6 +71,10 @@ export class MockProvider implements ExtractionProvider {
       rawResponseHash: key,
     };
   }
+
+  predictedMaxCostUsd(): string {
+    return '0';
+  }
 }
 
 function hash(s: string): string {

@@ -72,4 +72,17 @@ export interface ExtractionProvider {
   readonly name: string;
   readonly model: string;
   extract(input: ExtractionInput): Promise<ExtractionResult>;
+
+  /**
+   * Worst-case per-call cost the provider can incur in USD, returned as
+   * a non-negative decimal string. The budget check at enqueue uses this
+   * to refuse the call when (already-spent + predicted) would breach the
+   * cap, closing the race where the cap had a few cents of headroom and
+   * each in-flight job would tip it over (ADR-0011 known limit #2).
+   *
+   * Implementations should return a deliberately conservative number
+   * for a vision call (image input plus max output tokens). The mock
+   * provider returns "0".
+   */
+  predictedMaxCostUsd(): string;
 }
