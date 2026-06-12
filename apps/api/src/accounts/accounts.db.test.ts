@@ -301,6 +301,11 @@ describe('AccountsController (integration)', () => {
       await seed('ext_st_2', 'je_st_2', 'Stumptown', coffeeId, '2026-05-06T10:00:00Z');
       await seed('ext_st_3', 'je_st_3', 'Stumptown', teaId, '2026-05-07T10:00:00Z');
       await seed('ext_st_4', 'je_st_4', 'Stumptown', teaId, '2026-05-08T10:00:00Z');
+
+      // Stored vendor with extra internal whitespace; the normalization
+      // path should still find this row when the request comes in as
+      // "Blue Bottle" (single space).
+      await seed('ext_bb_5', 'je_bb_5', 'Blue   Bottle', coffeeId, '2026-05-31T10:00:00Z');
     });
 
     it('returns null for a vendor with no confirmed history', async () => {
@@ -321,8 +326,10 @@ describe('AccountsController (integration)', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = res.json() as VendorSuggestionsResponse;
-      expect(body.debit).toEqual({ accountId: coffeeId, count: 3 });
-      expect(body.credit).toEqual({ accountId: cardId, count: 4 });
+      // 4 coffee debits: 3 plain "Blue Bottle" + 1 "Blue   Bottle" picked up by
+      // the whitespace-collapse normalization. 5 card credits across all five.
+      expect(body.debit).toEqual({ accountId: coffeeId, count: 4 });
+      expect(body.credit).toEqual({ accountId: cardId, count: 5 });
     });
 
     it('breaks ties by most recent journal entry', async () => {
@@ -344,6 +351,23 @@ describe('AccountsController (integration)', () => {
       });
       const body = res.json() as VendorSuggestionsResponse;
       expect(body.debit?.accountId).toBe(coffeeId);
+    });
+
+    it('collapses internal whitespace so OCR variants match', async () => {
+      const a = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=' + encodeURIComponent('Blue   Bottle'),
+        headers: { cookie },
+      });
+      const b = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=' + encodeURIComponent('Blue\tBottle'),
+        headers: { cookie },
+      });
+      const ba = a.json() as VendorSuggestionsResponse;
+      const bb = b.json() as VendorSuggestionsResponse;
+      expect(ba.debit?.accountId).toBe(coffeeId);
+      expect(bb.debit?.accountId).toBe(coffeeId);
     });
 
     it('rejects a missing vendor with 400', async () => {
