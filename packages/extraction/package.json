@@ -10,11 +10,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./providers/mock": "./src/providers/mock.ts",
-    "./providers/anthropic": "./src/providers/anthropic.ts"
+    "./providers/anthropic": "./src/providers/anthropic.ts",
+    "./providers/openai": "./src/providers/openai.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@vellum/core": "workspace:*",
+    "openai": "^6.42.0",
     "zod": "^4.0.0"
   }
 }
