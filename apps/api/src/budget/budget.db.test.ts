@@ -192,5 +192,21 @@ describe('BudgetService (integration)', () => {
       const svc = new BudgetService(db as unknown as Db, null, null);
       await expect(svc.assertWithinBudget('usr_alice', '999')).resolves.toBeUndefined();
     });
+
+    it('worker re-check with router prediction blocks two-call fallback that would overshoot', async () => {
+      // ADR-0015 + ADR-0011 limit #2: when the runtime provider is the
+      // router, its predictedMaxCostUsd is primary plus secondary. The
+      // worker re-check must use the same prediction or a job that
+      // fits at re-check time can still tip the cap when both run.
+      const svc = new BudgetService(db as unknown as Db, '1', null);
+      await seedExtraction(db as unknown as Db, '0.95', new Date());
+      // A worker re-check with no prediction misses the race:
+      await expect(svc.assertWithinBudget(null, '0')).resolves.toBeUndefined();
+      // The same worker re-check with the router prediction (primary
+      // 0.05 + secondary 0.05 = 0.10) catches it: 0.95 + 0.10 >= 1.
+      await expect(svc.assertWithinBudget(null, '0.10')).rejects.toMatchObject({
+        scope: 'system',
+      });
+    });
   });
 });
