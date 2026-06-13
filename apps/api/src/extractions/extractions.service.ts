@@ -199,6 +199,14 @@ export class ExtractionsService {
     });
 
     const status = result.confidence >= this.reviewThreshold ? 'succeeded' : 'needs_review';
+    // The router may return a RoutedExtractionResult with the fallback
+    // pair populated; downcast through the structural shape so the
+    // service does not need to import the router type just to read two
+    // optional fields.
+    const routed = result as typeof result & {
+      fallbackFromProvider?: string | null;
+      fallbackReason?: string | null;
+    };
     await this.db
       .update(extractions)
       .set({
@@ -212,6 +220,8 @@ export class ExtractionsService {
         status,
         receipt: result.receipt,
         completedAt: result.extractedAt,
+        fallbackFromProvider: routed.fallbackFromProvider ?? null,
+        fallbackReason: routed.fallbackReason ?? null,
       })
       .where(eq(extractions.id, extractionId));
     await this.events

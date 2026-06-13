@@ -64,6 +64,13 @@
       "when": 1781244924629,
       "tag": "0008_tan_makkari",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781339181682,
+      "tag": "0009_giant_centennial",
+      "breakpoints": true
     }
   ]
 }

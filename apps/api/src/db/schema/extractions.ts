@@ -71,6 +71,8 @@ export const extractions = pgTable(
     journalEntryId: text('journal_entry_id'),
     confirmedById: text('confirmed_by_id'),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true, mode: 'date' }),
+    fallbackFromProvider: text('fallback_from_provider'),
+    fallbackReason: text('fallback_reason'),
   },
   (table) => [
     index('extractions_upload_idx').on(table.uploadId),
