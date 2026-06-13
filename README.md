@@ -7,20 +7,31 @@ A self-hostable AI bookkeeper for freelancers and small teams. You drop a receip
 
 ## Status
 
-Pre-alpha. Core ledger and extraction pipeline are in progress. Not yet usable, see roadmap.
+Pre-alpha but functionally end-to-end on the local stack. The core path works: upload a receipt, the api extracts it via Anthropic Claude vision, you review and confirm, a balanced journal entry is posted. The self-hosted deploy story is documented in [docs/deploying.md](./docs/deploying.md); no hosted demo yet.
 
 ## Stack
 
-Next.js 15 on the App Router. NestJS on the Fastify adapter. PostgreSQL with Drizzle for the ledger and the rest. Auth.js v5 for sessions. Redis for the job queue and pub/sub. Anthropic and OpenAI vision APIs for extraction. TypeScript strict everywhere.
+Next.js 15 on the App Router. NestJS on the Fastify adapter. PostgreSQL with Drizzle for the ledger and the rest. Auth.js v5 for sessions. Redis for the BullMQ job queue and pub/sub. Anthropic Claude vision API for extraction (OpenAI fallback planned). S3-compatible object storage (filesystem in dev). Socket.IO for live extraction-status pushes. TypeScript strict everywhere.
 
 See [docs/architecture.md](./docs/architecture.md) for how the pieces fit together, and [docs/adr/](./docs/adr/) for the specific choices and the trade-offs behind them.
 
+## What works
+
+- Double-entry ledger with sum-of-debits = sum-of-credits enforced by a deferred trigger (ADR-0001, ADR-0006)
+- Receipt upload and Anthropic vision extraction running through a BullMQ queue (ADR-0005, ADR-0007)
+- Review, edit, confirm UI that posts the journal entry (ADR-0006); confirmed receipts pre-fill account pickers from your own history (ADR-0013)
+- Per-currency money formatting and parsing (JPY 0 decimals, BHD 3) via @vellum/core
+- Daily extraction budget cap, system-wide and per-user, with predicted-cost gating at enqueue (ADR-0011, ADR-0014); `GET /budget/today` plus a header banner show live spend
+- Live extraction status pushed over WebSocket with polling fallback (ADR-0012)
+- Liveness `/healthz` (version + commit sha) and readiness `/readyz` (database + redis probes)
+- S3-compatible storage backend; filesystem fallback for dev (ADR-0008)
+- Production esbuild bundle with full Nest DI metadata + Dockerfile (ADR-0009, ADR-0010)
+
 ## Roadmap
 
-- [ ] Double-entry ledger with audit log
-- [ ] Receipt upload and AI extraction pipeline
-- [ ] Review queue UI
-- [ ] Plaid sandbox integration
+- [ ] First hosted deploy (single-user) and demo URL
+- [ ] OpenAI vision as a fallback provider behind the same interface
+- [ ] Plaid sandbox import to seed bank transactions alongside receipts
 - [ ] Natural language transaction queries
 - [ ] Anomaly detection on transactions
 
