@@ -1,4 +1,4 @@
-import { Controller, Get, HttpException, HttpStatus, Inject } from '@nestjs/common';
+import { Controller, Get, HttpException, HttpStatus, Inject, Logger } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
@@ -32,6 +32,8 @@ const CHECK_TIMEOUT_MS = 2000;
  */
 @Controller('readyz')
 export class ReadyzController {
+  private readonly logger = new Logger(ReadyzController.name);
+
   constructor(
     @Inject(DATABASE_TOKEN) private readonly db: Db,
     @Inject(QUEUE_CONNECTION) private readonly redis: Redis,
@@ -58,7 +60,9 @@ export class ReadyzController {
       await withTimeout(Promise.resolve(this.db.execute(sql`select 1`)), CHECK_TIMEOUT_MS);
       return 'up';
     } catch (err) {
-      console.error('readyz: database probe failed', err);
+      // Nest Logger -> pino so the line carries the same requestId
+      // every other log line in this probe carries.
+      this.logger.warn(`database probe failed: ${formatErr(err)}`);
       return 'down';
     }
   }
@@ -68,10 +72,15 @@ export class ReadyzController {
       await withTimeout(this.redis.ping(), CHECK_TIMEOUT_MS);
       return 'up';
     } catch (err) {
-      console.error('readyz: redis probe failed', err);
+      this.logger.warn(`redis probe failed: ${formatErr(err)}`);
       return 'down';
     }
   }
+}
+
+function formatErr(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  return String(err);
 }
 
 async function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
