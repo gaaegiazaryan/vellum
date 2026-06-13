@@ -1,5 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
+import { RequestIdExceptionFilter } from './observability/request-id-filter.js';
 import { AccountsModule } from './accounts/accounts.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { HealthzModule } from './healthz/healthz.module.js';
@@ -19,12 +21,17 @@ export class AppModule {
   static register(env: Env): DynamicModule {
     return {
       module: AppModule,
+      providers: [{ provide: APP_FILTER, useClass: RequestIdExceptionFilter }],
       imports: [
         LoggerModule.forRoot({
           pinoHttp: {
             level: env.LOG_LEVEL,
             transport: env.isProduction ? undefined : { target: 'pino-pretty' },
             redact: { paths: [...REDACT_PATHS], censor: '[REDACTED]' },
+            // FastifyAdapter.genRequestId (main.ts) sets req.id; pino
+            // surfaces it as requestId in every log line so a single
+            // id correlates every component a request touched.
+            customAttributeKeys: { reqId: 'requestId' },
           },
         }),
         DatabaseModule.forRoot(env),
