@@ -32,6 +32,7 @@ const envSchema = z
       .optional()
       .transform((v) => v === 'true'),
     EXTRACTION_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
+    EXTRACTION_FALLBACK_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).optional(),
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
     OPENAI_API_KEY: z.string().min(1).optional(),
     EXTRACTION_DAILY_BUDGET_USD: z
@@ -59,6 +60,26 @@ const envSchema = z
     message: 'EXTRACTION_PROVIDER=openai requires OPENAI_API_KEY to be set',
     path: ['OPENAI_API_KEY'],
   })
+  .refine(
+    (env) => env.EXTRACTION_FALLBACK_PROVIDER !== 'anthropic' || Boolean(env.ANTHROPIC_API_KEY),
+    {
+      message: 'EXTRACTION_FALLBACK_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set',
+      path: ['ANTHROPIC_API_KEY'],
+    },
+  )
+  .refine((env) => env.EXTRACTION_FALLBACK_PROVIDER !== 'openai' || Boolean(env.OPENAI_API_KEY), {
+    message: 'EXTRACTION_FALLBACK_PROVIDER=openai requires OPENAI_API_KEY to be set',
+    path: ['OPENAI_API_KEY'],
+  })
+  .refine(
+    (env) =>
+      !env.EXTRACTION_FALLBACK_PROVIDER ||
+      env.EXTRACTION_FALLBACK_PROVIDER !== env.EXTRACTION_PROVIDER,
+    {
+      message: 'EXTRACTION_FALLBACK_PROVIDER cannot equal EXTRACTION_PROVIDER',
+      path: ['EXTRACTION_FALLBACK_PROVIDER'],
+    },
+  )
   .refine(
     (env) =>
       env.STORAGE_DRIVER !== 's3' ||

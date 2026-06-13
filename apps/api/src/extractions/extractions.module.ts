@@ -11,7 +11,10 @@ import {
   DEFAULT_CONFIDENCE_REVIEW_THRESHOLD,
 } from './extractions.service.js';
 import { ExtractionWorker } from './extraction.worker.js';
+import { ProviderRouter } from './provider-router.js';
 import type { Env } from '../config/env.js';
+
+type ProviderName = NonNullable<Env['EXTRACTION_FALLBACK_PROVIDER']>;
 
 /**
  * Provider selection driven by env.
@@ -26,8 +29,9 @@ import type { Env } from '../config/env.js';
  * dev without an api key, and demo deploys that intentionally stub
  * the AI.
  *
- * Fallback routing across providers lives in a follow-up PR per
- * ADR-0015; this function is single-attempt selection.
+ * When EXTRACTION_FALLBACK_PROVIDER is set to a different provider,
+ * the runtime provider is a ProviderRouter that wraps the primary
+ * and falls back once on retryable infrastructure errors (ADR-0015).
  */
 @Module({})
 export class ExtractionsModule {
@@ -56,11 +60,15 @@ export class ExtractionsModule {
 }
 
 function pickProvider(env: Env): ExtractionProvider {
-  if (env.EXTRACTION_PROVIDER === 'anthropic') {
-    return new AnthropicProvider({ apiKey: env.ANTHROPIC_API_KEY ?? '' });
-  }
-  if (env.EXTRACTION_PROVIDER === 'openai') {
-    return new OpenAIProvider({ apiKey: env.OPENAI_API_KEY ?? '' });
-  }
+  const primary = instantiate(env.EXTRACTION_PROVIDER, env);
+  const fallback = env.EXTRACTION_FALLBACK_PROVIDER
+    ? instantiate(env.EXTRACTION_FALLBACK_PROVIDER, env)
+    : null;
+  return fallback ? new ProviderRouter(primary, fallback) : primary;
+}
+
+function instantiate(name: ProviderName, env: Env): ExtractionProvider {
+  if (name === 'anthropic') return new AnthropicProvider({ apiKey: env.ANTHROPIC_API_KEY ?? '' });
+  if (name === 'openai') return new OpenAIProvider({ apiKey: env.OPENAI_API_KEY ?? '' });
   return new MockProvider();
 }
