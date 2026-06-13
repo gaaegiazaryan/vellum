@@ -13,7 +13,7 @@ export const EXTRACTION_QUEUE_NAME = 'extraction';
 
 export const EXTRACTION_QUEUE = Symbol('EXTRACTION_QUEUE');
 export const QUEUE_REDIS_URL = Symbol('QUEUE_REDIS_URL');
-const QUEUE_CONNECTION = Symbol('QUEUE_CONNECTION');
+export const QUEUE_CONNECTION = Symbol('QUEUE_CONNECTION');
 
 export interface ExtractionJobData {
   extractionId: string;
@@ -62,7 +62,7 @@ export class QueueModule {
         { provide: QUEUE_REDIS_URL, useValue: env.REDIS_URL },
         QueueCleanup,
       ],
-      exports: [EXTRACTION_QUEUE, QUEUE_REDIS_URL],
+      exports: [EXTRACTION_QUEUE, QUEUE_REDIS_URL, QUEUE_CONNECTION],
     };
   }
 }
