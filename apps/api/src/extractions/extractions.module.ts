@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { MockProvider } from '@vellum/extraction/providers/mock';
 import { AnthropicProvider } from '@vellum/extraction/providers/anthropic';
+import { OpenAIProvider } from '@vellum/extraction/providers/openai';
 import type { ExtractionProvider } from '@vellum/extraction';
 import { ExtractionsController } from './extractions.controller.js';
 import {
@@ -15,14 +16,18 @@ import type { Env } from '../config/env.js';
 /**
  * Provider selection driven by env.
  *
- * EXTRACTION_PROVIDER=anthropic + a valid ANTHROPIC_API_KEY uses the
- * real Anthropic Claude vision API. The env schema already enforces
- * that combination, so reaching the `anthropic` branch here without
- * a key would be a programmer error.
+ * EXTRACTION_PROVIDER=anthropic uses the real Anthropic Claude vision
+ * API (needs ANTHROPIC_API_KEY). EXTRACTION_PROVIDER=openai uses the
+ * GPT-4o vision path (needs OPENAI_API_KEY). The env schema already
+ * enforces the key requirement so reaching this function with the
+ * wrong combination would be a programmer error.
  *
  * EXTRACTION_PROVIDER=mock is the default. Useful in tests, local
  * dev without an api key, and demo deploys that intentionally stub
  * the AI.
+ *
+ * Fallback routing across providers lives in a follow-up PR per
+ * ADR-0015; this function is single-attempt selection.
  */
 @Module({})
 export class ExtractionsModule {
@@ -53,6 +58,9 @@ export class ExtractionsModule {
 function pickProvider(env: Env): ExtractionProvider {
   if (env.EXTRACTION_PROVIDER === 'anthropic') {
     return new AnthropicProvider({ apiKey: env.ANTHROPIC_API_KEY ?? '' });
+  }
+  if (env.EXTRACTION_PROVIDER === 'openai') {
+    return new OpenAIProvider({ apiKey: env.OPENAI_API_KEY ?? '' });
   }
   return new MockProvider();
 }

@@ -31,8 +31,9 @@ const envSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
-    EXTRACTION_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
+    EXTRACTION_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    OPENAI_API_KEY: z.string().min(1).optional(),
     EXTRACTION_DAILY_BUDGET_USD: z
       .string()
       .regex(/^\d+(\.\d{1,6})?$/, 'EXTRACTION_DAILY_BUDGET_USD must be a non-negative decimal')
@@ -53,6 +54,10 @@ const envSchema = z
   .refine((env) => env.EXTRACTION_PROVIDER !== 'anthropic' || Boolean(env.ANTHROPIC_API_KEY), {
     message: 'EXTRACTION_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set',
     path: ['ANTHROPIC_API_KEY'],
+  })
+  .refine((env) => env.EXTRACTION_PROVIDER !== 'openai' || Boolean(env.OPENAI_API_KEY), {
+    message: 'EXTRACTION_PROVIDER=openai requires OPENAI_API_KEY to be set',
+    path: ['OPENAI_API_KEY'],
   })
   .refine(
     (env) =>
