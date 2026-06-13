@@ -46,8 +46,8 @@ The api gets a `ProviderRouter` (or just `RoutedProvider implements ExtractionPr
 
 Two new DB columns on `extractions`:
 
-- `fallback_from_provider text` — null on the happy path, the primary's name when the secondary produced the response
-- `fallback_reason text` — null on the happy path, the error class that caused the hop
+- `fallback_from_provider text` - null on the happy path, the primary's name when the secondary produced the response
+- `fallback_reason text` - null on the happy path, the error class that caused the hop
 
 A new migration adds them; the existing rows backfill to null. No downtime needed (NULLABLE columns, default NULL).
 
