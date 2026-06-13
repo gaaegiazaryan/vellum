@@ -9,6 +9,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { z } from 'zod';
@@ -21,6 +22,7 @@ import {
   ExtractionsService,
   type ConfirmExtractionResult,
   type ExtractionRow,
+  type FallbackStats,
 } from './extractions.service.js';
 
 const createExtractionSchema = z.object({
@@ -105,10 +107,44 @@ export class ExtractionsController {
     return this.extractions.confirm(id, parsed.data, user?.id ?? null);
   }
 
+  @Get('fallback-stats')
+  async fallbackStats(
+    @Query('since') sinceRaw?: string,
+    @Query('until') untilRaw?: string,
+  ): Promise<FallbackStats> {
+    // Default window: today UTC. Same UTC boundary the budget uses
+    // (ADR-0011) so the two operator views read off the same axis.
+    const now = new Date();
+    const defaultSince = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const defaultUntil = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
+    );
+    const since = parseIsoOr(sinceRaw, defaultSince, 'since');
+    const until = parseIsoOr(untilRaw, defaultUntil, 'until');
+    if (until.getTime() <= since.getTime()) {
+      throw new BadRequestException({
+        error: 'invalid_range',
+        detail: 'until must be after since',
+      });
+    }
+    return this.extractions.fallbackStats(since, until);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<ExtractionRow> {
     const row = await this.extractions.findById(id);
     if (!row) throw new NotFoundException(`extraction ${id} not found`);
     return row;
   }
+}
+
+function parseIsoOr(raw: string | undefined, fallback: Date, name: string): Date {
+  if (raw === undefined || raw === '') return fallback;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) {
+    throw new BadRequestException({ error: 'invalid_query', detail: `${name} is not an ISO date` });
+  }
+  return d;
 }

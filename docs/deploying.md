@@ -139,6 +139,8 @@ should return a 200 with `{"status":"ok","uptimeSeconds":<n>,"timestamp":"...","
 
 which returns a 200 `{"status":"ready","database":"up","redis":"up","timestamp":"..."}` when both dependencies respond within a 2s timeout, or a 503 with the same shape and `status: "degraded"` when one is down. Wire `/readyz` to your load balancer's "is this pod accepting traffic?" probe and `/healthz` to its "should I restart this pod?" probe; conflating the two restarts the api on transient database hiccups.
 
+When you have `EXTRACTION_FALLBACK_PROVIDER` configured (ADR-0015), `GET /extractions/fallback-stats` is the operator view of how often the router actually fell back today. Defaults to the same UTC window the budget uses; pass `?since=` and `?until=` (both ISO 8601) for a custom range. Body returns `{ total, fellBack, byReason, byPrimary, since, until }` so you can see at a glance whether the primary provider has been usable today, broken down by error class (`ProviderTimeoutError` vs `InvalidProviderResponseError`) and by which primary failed when more than one is configured across deploys.
+
 The web app at `https://<your-domain>/` should render the landing page in less than a second. The `/api/auth/[...nextauth]` route should respond (even if no providers are wired yet, Auth.js's default error page renders).
 
 Open an issue if anything in this guide is wrong, missing, or out of date. The repo is the source of truth; the docs are a snapshot.

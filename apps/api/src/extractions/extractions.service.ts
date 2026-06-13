@@ -7,7 +7,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { Queue } from 'bullmq';
 import {
   ExtractionError,
@@ -79,6 +79,15 @@ export interface ConfirmExtractionInput {
   totalMinor?: string;
   occurredAt?: Date;
   currency?: string;
+}
+
+export interface FallbackStats {
+  total: number;
+  fellBack: number;
+  byReason: Record<string, number>;
+  byPrimary: Record<string, number>;
+  since: string;
+  until: string;
 }
 
 export interface ConfirmExtractionResult {
@@ -270,6 +279,58 @@ export class ExtractionsService {
       .where(eq(extractions.uploadId, uploadId))
       .orderBy(desc(extractions.createdAt));
     return rows.map(rowFromDb);
+  }
+
+  /**
+   * Operator-facing summary of how often the router fell back over
+   * a time window. Reads only the audit columns added in ADR-0015
+   * (fallback_from_provider, fallback_reason); a confirmed row that
+   * did not need a fallback simply contributes to `total`.
+   *
+   * The reason and primary-name maps surface what was failing so the
+   * operator can decide whether to flip EXTRACTION_PROVIDER manually
+   * (the ADR-0015 known limit #3 workaround) without having to grep
+   * the application log.
+   */
+  async fallbackStats(since: Date, until: Date): Promise<FallbackStats> {
+    const rows = await this.db
+      .select({
+        total: sql<string>`count(*)::text`,
+        fellBack: sql<string>`count(*) filter (where ${extractions.fallbackFromProvider} is not null)::text`,
+      })
+      .from(extractions)
+      .where(and(gte(extractions.createdAt, since), lt(extractions.createdAt, until)));
+    const reasonRows = await this.db
+      .select({
+        reason: extractions.fallbackReason,
+        primary: extractions.fallbackFromProvider,
+        n: sql<string>`count(*)::text`,
+      })
+      .from(extractions)
+      .where(
+        and(
+          gte(extractions.createdAt, since),
+          lt(extractions.createdAt, until),
+          sql`${extractions.fallbackFromProvider} is not null`,
+        ),
+      )
+      .groupBy(extractions.fallbackReason, extractions.fallbackFromProvider);
+
+    const byReason: Record<string, number> = {};
+    const byPrimary: Record<string, number> = {};
+    for (const r of reasonRows) {
+      if (r.reason) byReason[r.reason] = (byReason[r.reason] ?? 0) + Number(r.n);
+      if (r.primary) byPrimary[r.primary] = (byPrimary[r.primary] ?? 0) + Number(r.n);
+    }
+    const first = rows[0];
+    return {
+      total: Number(first?.total ?? 0),
+      fellBack: Number(first?.fellBack ?? 0),
+      byReason,
+      byPrimary,
+      since: since.toISOString(),
+      until: until.toISOString(),
+    };
   }
 
   /**
