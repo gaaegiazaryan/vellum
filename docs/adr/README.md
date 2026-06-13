@@ -27,3 +27,4 @@ An accepted ADR is immutable. If we change our minds, we write a new ADR that su
 - [0012](./0012-websocket-status.md): WebSocket-pushed extraction status
 - [0013](./0013-category-suggestion.md): Vendor-to-account suggestion at confirm time
 - [0014](./0014-per-user-budget.md): Per-user budget cap layered on top of the system cap
+- [0015](./0015-provider-fallback.md): Provider fallback strategy
