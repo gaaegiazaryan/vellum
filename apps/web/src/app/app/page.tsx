@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient, ApiError } from '@/lib/api';
 import { currency as toCurrency, formatMinorUnits, Money } from '@vellum/core';
+import { BudgetBanner } from './budget-banner';
 
 export const metadata = {
   title: 'Vellum',
@@ -62,6 +63,7 @@ export default async function AppHome() {
           {' · '}
           <Link href="/app/uploads">upload receipt</Link>
         </p>
+        <BudgetBanner />
       </header>
 
       {data.entries.length === 0 ? (
