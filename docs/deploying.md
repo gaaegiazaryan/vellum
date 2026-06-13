@@ -131,6 +131,12 @@ After the migration step finishes and both services are up:
 
 should return a 200 with `{"status":"ok","uptimeSeconds":<n>,"timestamp":"...","version":"...","commitSha":"..."}`. The `version` field comes from `apps/api/package.json`; `commitSha` is whatever you passed in the `GIT_SHA` env at image build, or `null` if you did not pass it. If you get a 5xx, check the api logs for env validation errors first; `loadEnv` fails loud on missing or malformed configuration.
 
+`/healthz` is liveness only (the process is up). For readiness, hit:
+
+    curl https://api.<your-domain>/readyz
+
+which returns a 200 `{"status":"ready","database":"up","redis":"up","timestamp":"..."}` when both dependencies respond within a 2s timeout, or a 503 with the same shape and `status: "degraded"` when one is down. Wire `/readyz` to your load balancer's "is this pod accepting traffic?" probe and `/healthz` to its "should I restart this pod?" probe; conflating the two restarts the api on transient database hiccups.
+
 The web app at `https://<your-domain>/` should render the landing page in less than a second. The `/api/auth/[...nextauth]` route should respond (even if no providers are wired yet, Auth.js's default error page renders).
 
 Open an issue if anything in this guide is wrong, missing, or out of date. The repo is the source of truth; the docs are a snapshot.
