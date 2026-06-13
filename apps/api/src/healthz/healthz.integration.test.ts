@@ -1,14 +1,17 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { HealthzModule } from './healthz.module.js';
+import { HealthzController } from './healthz.controller.js';
 
 describe('GET /healthz (integration)', () => {
   let app: NestFastifyApplication;
 
   beforeAll(async () => {
+    // HealthzController has no deps; mounting it directly avoids the
+    // ReadyzController sibling whose Postgres + Redis dependencies
+    // live in a heavier test (readyz.db.test.ts).
     const moduleRef = await Test.createTestingModule({
-      imports: [HealthzModule],
+      controllers: [HealthzController],
     }).compile();
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
