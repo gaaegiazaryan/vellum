@@ -190,7 +190,15 @@ export class ExtractionsService {
     // queued under-budget cannot run after the cap was hit. The row
     // remembers who enqueued it so per-user scope still applies in
     // the worker (created_by_id is nullable for legacy rows).
-    await this.budget.assertWithinBudget(row.createdById ?? undefined);
+    //
+    // Predicted cost matches the enqueue check (ADR-0011 limit #2,
+    // ADR-0015 fallback). With the router, predictedMaxCostUsd sums
+    // primary plus secondary so a job that fits at re-check time
+    // cannot still tip the cap when both providers run.
+    await this.budget.assertWithinBudget(
+      row.createdById ?? undefined,
+      this.provider.predictedMaxCostUsd(),
+    );
 
     const buffer = await this.uploadsService.getBytes(upload.id);
     const result = await this.provider.extract({
