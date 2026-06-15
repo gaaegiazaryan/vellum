@@ -480,4 +480,133 @@ describe('ExtractionsController POST /extractions (integration)', () => {
     expect(res.statusCode).toBe(422);
     expect((res.json() as { error: string }).error).toBe('not_confirmable');
   });
+
+  describe('lines body (ADR-0017)', () => {
+    const VAT_ACCOUNT_ID = '66666666-6666-4666-8666-666666666666';
+
+    beforeAll(async () => {
+      await sql`INSERT INTO accounts (id, code, name, type)
+                VALUES (${VAT_ACCOUNT_ID}, '1410', 'VAT Receivable', 'ASSET')
+                ON CONFLICT (id) DO NOTHING`;
+    });
+
+    it('posts a 3-line entry from a lines body: subtotal + tax debit, single credit', async () => {
+      const id = await createSucceededExtraction(`confirm-lines-${Math.random()}`);
+      const res = await confirmPost(
+        id,
+        {
+          lines: [
+            { side: 'DEBIT', accountId: EXPENSE_ACCOUNT_ID, amountMinor: '900', memo: 'subtotal' },
+            { side: 'DEBIT', accountId: VAT_ACCOUNT_ID, amountMinor: '79', memo: 'sales tax' },
+            { side: 'CREDIT', accountId: CASH_ACCOUNT_ID, amountMinor: '979' },
+          ],
+        },
+        `idem-lines-ok-${Math.random()}`,
+      );
+      expect(res.statusCode).toBe(201);
+      const body = res.json() as { journalEntry: { id: string } };
+      const lines = await sql`
+        SELECT side, amount, account_id, memo FROM ledger_lines
+        WHERE journal_entry_id = ${body.journalEntry.id}
+        ORDER BY position
+      `;
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toMatchObject({
+        side: 'DEBIT',
+        amount: '900',
+        account_id: EXPENSE_ACCOUNT_ID,
+        memo: 'subtotal',
+      });
+      expect(lines[1]).toMatchObject({
+        side: 'DEBIT',
+        amount: '79',
+        account_id: VAT_ACCOUNT_ID,
+        memo: 'sales tax',
+      });
+      expect(lines[2]).toMatchObject({
+        side: 'CREDIT',
+        amount: '979',
+        account_id: CASH_ACCOUNT_ID,
+      });
+    });
+
+    it('rejects an unbalanced lines body with 400 and a clear error slug', async () => {
+      const id = await createSucceededExtraction(`confirm-unbal-${Math.random()}`);
+      const res = await confirmPost(
+        id,
+        {
+          lines: [
+            { side: 'DEBIT', accountId: EXPENSE_ACCOUNT_ID, amountMinor: '900' },
+            { side: 'CREDIT', accountId: CASH_ACCOUNT_ID, amountMinor: '500' },
+          ],
+        },
+        `idem-unbal-${Math.random()}`,
+      );
+      expect(res.statusCode).toBe(400);
+      const body = res.json() as { error: string; debitMinor: string; creditMinor: string };
+      expect(body.error).toBe('unbalanced_entry');
+      expect(body.debitMinor).toBe('900');
+      expect(body.creditMinor).toBe('500');
+    });
+
+    it('rejects mixing lines with the sugar accounts', async () => {
+      const id = await createSucceededExtraction(`confirm-mix-${Math.random()}`);
+      const res = await confirmPost(
+        id,
+        {
+          debitAccountId: EXPENSE_ACCOUNT_ID,
+          creditAccountId: CASH_ACCOUNT_ID,
+          lines: [
+            { side: 'DEBIT', accountId: EXPENSE_ACCOUNT_ID, amountMinor: '979' },
+            { side: 'CREDIT', accountId: CASH_ACCOUNT_ID, amountMinor: '979' },
+          ],
+        },
+        `idem-mix-${Math.random()}`,
+      );
+      expect(res.statusCode).toBe(400);
+      expect((res.json() as { error: string }).error).toBe('mixed_body_shape');
+    });
+
+    it('rejects a lines body with a non-positive amount', async () => {
+      const id = await createSucceededExtraction(`confirm-zeroline-${Math.random()}`);
+      const res = await confirmPost(
+        id,
+        {
+          lines: [
+            { side: 'DEBIT', accountId: EXPENSE_ACCOUNT_ID, amountMinor: '0' },
+            { side: 'CREDIT', accountId: CASH_ACCOUNT_ID, amountMinor: '0' },
+          ],
+        },
+        `idem-zeroline-${Math.random()}`,
+      );
+      expect([400, 422]).toContain(res.statusCode);
+    });
+
+    it('rejects a request that has neither lines nor the sugar accounts', async () => {
+      const id = await createSucceededExtraction(`confirm-empty-${Math.random()}`);
+      const res = await confirmPost(id, {}, `idem-empty-${Math.random()}`);
+      expect(res.statusCode).toBe(400);
+      expect((res.json() as { error: string }).error).toBe('missing_accounts');
+    });
+
+    it('returns 404 when a lines body points at an unknown account', async () => {
+      const id = await createSucceededExtraction(`confirm-lines-noacct-${Math.random()}`);
+      const res = await confirmPost(
+        id,
+        {
+          lines: [
+            {
+              side: 'DEBIT',
+              accountId: '77777777-7777-4777-8777-777777777777',
+              amountMinor: '500',
+            },
+            { side: 'CREDIT', accountId: CASH_ACCOUNT_ID, amountMinor: '500' },
+          ],
+        },
+        `idem-lines-noacct-${Math.random()}`,
+      );
+      expect(res.statusCode).toBe(404);
+      expect((res.json() as { error: string }).error).toBe('account_not_found');
+    });
+  });
 });

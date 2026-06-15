@@ -65,9 +65,28 @@ export interface ExtractionRow {
   confirmedAt: Date | null;
 }
 
+export interface ConfirmLine {
+  side: 'DEBIT' | 'CREDIT';
+  accountId: string;
+  amountMinor: string;
+  memo?: string;
+}
+
 export interface ConfirmExtractionInput {
-  debitAccountId: string;
-  creditAccountId: string;
+  /**
+   * The simple shape (one debit + one credit). When both these are
+   * present and `lines` is absent, the service expands them into a
+   * two-line entry exactly like ADR-0006 (the sugar form).
+   */
+  debitAccountId?: string;
+  creditAccountId?: string;
+  totalMinor?: string;
+  /**
+   * The multi-line shape (ADR-0017). When present, takes precedence
+   * over the sugar fields. Must contain at least one debit and one
+   * credit; sum-of-debits must equal sum-of-credits.
+   */
+  lines?: ConfirmLine[];
   description?: string;
   /**
    * Optional human corrections applied when building the entry. The
@@ -76,7 +95,6 @@ export interface ConfirmExtractionInput {
    * the correction lives on the journal entry, and the gap between the
    * two is the record of what the human changed.
    */
-  totalMinor?: string;
   occurredAt?: Date;
   currency?: string;
 }
@@ -334,29 +352,27 @@ export class ExtractionsService {
   }
 
   /**
-   * Turn a confirmed extraction into a ledger entry. The receipt total
-   * becomes a single two-line balanced entry: debit the chosen expense
-   * account, credit the chosen payment account (ADR-0006). The human
-   * picks both accounts; the image cannot.
+   * Turn a confirmed extraction into a ledger entry. ADR-0006 shipped
+   * the two-line shape (one debit + one credit, both for the receipt's
+   * total). ADR-0017 extends this to N >= 2 lines per entry so a
+   * receipt with separately-stated tax can post the breakdown.
+   *
+   * The wire body accepts either the sugar form (debitAccountId +
+   * creditAccountId) or a lines: [...] array. expandToLines converts
+   * sugar to the array shape; everything past that point operates on
+   * the array. Balance and account-existence are validated once,
+   * regardless of which body shape arrived.
    *
    * Everything runs in one transaction with the extraction row locked
    * FOR UPDATE, so two concurrent confirms cannot both post an entry.
-   * Balance holds by construction (two equal lines, one currency); the
-   * per-entry balance trigger is the backstop, so this path does not
-   * re-run assertBalanced.
+   * The per-entry deferred-trigger balance invariant is the backstop
+   * for the application-level check, not a substitute for it.
    */
   async confirm(
     extractionId: string,
     input: ConfirmExtractionInput,
     userId: string | null,
   ): Promise<ConfirmExtractionResult> {
-    if (input.debitAccountId === input.creditAccountId) {
-      throw new BadRequestException({
-        error: 'same_account',
-        message: 'debit and credit accounts must differ',
-      });
-    }
-
     return this.db.transaction(async (tx) => {
       const [row] = await tx
         .select()
@@ -387,18 +403,42 @@ export class ExtractionsService {
       }
 
       const receipt = receiptSchema.parse(row.receipt);
-      const total =
-        input.totalMinor !== undefined ? BigInt(input.totalMinor) : BigInt(receipt.totalMinor);
-      if (total <= 0n) {
+
+      // One of two body shapes lands here. expandToLines is the single
+      // place that knows about the two shapes; the rest of confirm
+      // talks to a canonical list.
+      const lines = expandToLines(input, receipt);
+
+      // Application-level balance check (the deferred trigger is the
+      // backstop but a clean 400 with `error: 'unbalanced_entry'` is
+      // a better operator experience than a constraint violation).
+      const debitSum = lines.filter((l) => l.side === 'DEBIT').reduce((s, l) => s + l.amount, 0n);
+      const creditSum = lines.filter((l) => l.side === 'CREDIT').reduce((s, l) => s + l.amount, 0n);
+      if (debitSum === 0n || creditSum === 0n) {
         throw new UnprocessableEntityException({
           error: 'non_positive_total',
-          message: 'total must be positive to post a journal entry',
+          message: 'each side must sum to a positive amount',
         });
       }
+      if (debitSum !== creditSum) {
+        throw new BadRequestException({
+          error: 'unbalanced_entry',
+          message: 'sum of debit amounts must equal sum of credit amounts',
+          debitMinor: debitSum.toString(),
+          creditMinor: creditSum.toString(),
+        });
+      }
+      if (lines.some((l) => l.amount <= 0n)) {
+        throw new BadRequestException({
+          error: 'non_positive_line',
+          message: 'every line amount must be positive',
+        });
+      }
+
       const occurredAt = input.occurredAt ?? receipt.occurredAt;
       const currency = input.currency ?? receipt.currency;
 
-      const accountIds = [input.debitAccountId, input.creditAccountId];
+      const accountIds = Array.from(new Set(lines.map((l) => l.accountId)));
       const found = await tx
         .select({ id: accounts.id })
         .from(accounts)
@@ -425,24 +465,16 @@ export class ExtractionsService {
         .returning();
       if (!entry) throw new Error('failed to insert journal_entries row');
 
-      await tx.insert(ledgerLines).values([
-        {
+      await tx.insert(ledgerLines).values(
+        lines.map((line, i) => ({
           journalEntryId: entry.id,
-          accountId: input.debitAccountId,
-          side: 'DEBIT',
-          amount: total,
-          memo: null,
-          position: 0,
-        },
-        {
-          journalEntryId: entry.id,
-          accountId: input.creditAccountId,
-          side: 'CREDIT',
-          amount: total,
-          memo: null,
-          position: 1,
-        },
-      ]);
+          accountId: line.accountId,
+          side: line.side,
+          amount: line.amount,
+          memo: line.memo,
+          position: i,
+        })),
+      );
 
       const [updated] = await tx
         .update(extractions)
@@ -488,6 +520,60 @@ function rowFromDb(r: typeof extractions.$inferSelect): ExtractionRow {
     confirmedById: r.confirmedById,
     confirmedAt: r.confirmedAt,
   };
+}
+
+interface CanonicalLine {
+  side: 'DEBIT' | 'CREDIT';
+  accountId: string;
+  amount: bigint;
+  memo: string | null;
+}
+
+/**
+ * Expand either confirm body shape into the canonical N-line form
+ * (ADR-0017). The sugar form (debitAccountId + creditAccountId +
+ * optional totalMinor) becomes two lines for the receipt total; the
+ * lines form is parsed straight through, with explicit amounts cast
+ * to BigInt. Each path normalizes the same outputs so the caller has
+ * one shape to validate.
+ */
+function expandToLines(
+  input: ConfirmExtractionInput,
+  receipt: { totalMinor: string },
+): CanonicalLine[] {
+  if (input.lines !== undefined) {
+    if (input.debitAccountId !== undefined || input.creditAccountId !== undefined) {
+      throw new BadRequestException({
+        error: 'mixed_body_shape',
+        message:
+          'pass either the lines array or the (debitAccountId, creditAccountId) pair, not both',
+      });
+    }
+    return input.lines.map((l) => ({
+      side: l.side,
+      accountId: l.accountId,
+      amount: BigInt(l.amountMinor),
+      memo: l.memo?.trim() ? l.memo.trim() : null,
+    }));
+  }
+  if (input.debitAccountId === undefined || input.creditAccountId === undefined) {
+    throw new BadRequestException({
+      error: 'missing_accounts',
+      message: 'confirm requires either lines or both debitAccountId and creditAccountId',
+    });
+  }
+  if (input.debitAccountId === input.creditAccountId) {
+    throw new BadRequestException({
+      error: 'same_account',
+      message: 'debit and credit accounts must differ',
+    });
+  }
+  const total =
+    input.totalMinor !== undefined ? BigInt(input.totalMinor) : BigInt(receipt.totalMinor);
+  return [
+    { side: 'DEBIT', accountId: input.debitAccountId, amount: total, memo: null },
+    { side: 'CREDIT', accountId: input.creditAccountId, amount: total, memo: null },
+  ];
 }
 
 /**
