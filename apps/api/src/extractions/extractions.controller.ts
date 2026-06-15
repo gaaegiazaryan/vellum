@@ -29,14 +29,27 @@ const createExtractionSchema = z.object({
   uploadId: z.string().uuid(),
 });
 
+const confirmLineSchema = z.object({
+  side: z.enum(['DEBIT', 'CREDIT']),
+  accountId: z.string().uuid(),
+  amountMinor: z
+    .string()
+    .regex(/^\d+$/, 'amountMinor must be a non-negative integer in minor units'),
+  memo: z.string().trim().min(1).max(500).optional(),
+});
+
+// Accepts either the sugar form (ADR-0006) or the lines form (ADR-0017).
+// Both shapes share the same overrides block; the service is the place
+// that mediates between them (extractions.service.ts/expandToLines).
 const confirmExtractionSchema = z.object({
-  debitAccountId: z.string().uuid(),
-  creditAccountId: z.string().uuid(),
-  description: z.string().trim().min(1).max(500).optional(),
+  debitAccountId: z.string().uuid().optional(),
+  creditAccountId: z.string().uuid().optional(),
   totalMinor: z
     .string()
     .regex(/^\d+$/, 'totalMinor must be a non-negative integer in minor units')
     .optional(),
+  lines: z.array(confirmLineSchema).min(2).optional(),
+  description: z.string().trim().min(1).max(500).optional(),
   occurredAt: z.coerce.date().optional(),
   currency: z
     .string()
