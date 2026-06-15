@@ -4,6 +4,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import fastifyMultipart from '@fastify/multipart';
+import fastifyHelmet from '@fastify/helmet';
 import { AppModule } from './app.module.js';
 import { loadEnv } from './config/env.js';
 import { genRequestId } from './observability/request-id.js';
@@ -28,6 +29,21 @@ async function bootstrap(): Promise<void> {
     if (!reply.getHeader('x-request-id')) {
       reply.header('X-Request-Id', String(req.id ?? ''));
     }
+  });
+
+  // Default-deny security headers. The api never serves HTML so no
+  // CSP rules are needed for inline assets; the JSON-only contract
+  // means a strict default is the right one. crossOriginResourcePolicy
+  // stays 'same-origin' because the web app is the only consumer; if
+  // a future deploy splits domains the operator will set
+  // NEXT_PUBLIC_API_URL and CORS lands as a separate ADR.
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    referrerPolicy: { policy: 'no-referrer' },
+    hsts: env.isProduction
+      ? { maxAge: 15_552_000, includeSubDomains: true, preload: false }
+      : false,
   });
 
   await app.register(fastifyMultipart, {

@@ -110,6 +110,7 @@ The image runs `node dist/main.js` as PID 1 with `NODE_ENV=production`. It carri
 
 - `next build` evaluates route handlers to collect page data. `getDb` in `apps/web/src/db/client.ts` returns a postgres-js client with a placeholder url when `DATABASE_URL` is unset and `NEXT_PHASE` flags the build phase (postgres-js does not actually connect until the first query, so the build never reaches a connection attempt). Real `DATABASE_URL` and `AUTH_SECRET` come from the deploy env at runtime.
 - `apps/web/next.config.mjs` is ESM JavaScript, not TypeScript, so `next start` does not need `typescript` at runtime and the Dockerfile keeps `pnpm deploy --prod`.
+- The api ships `@fastify/helmet` with sensible defaults on every response: `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and (in production) `Strict-Transport-Security: max-age=15552000; includeSubDomains`. `Content-Security-Policy` is intentionally off (the api is JSON-only). If your reverse proxy strips or overrides these, drop the override; the defaults are the right ones for a self-host deploy.
 
 6. What this guide does not cover yet
 
