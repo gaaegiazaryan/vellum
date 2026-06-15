@@ -11,14 +11,14 @@ Pre-alpha but functionally end-to-end on the local stack. The core path works: u
 
 ## Stack
 
-Next.js 15 on the App Router. NestJS on the Fastify adapter. PostgreSQL with Drizzle for the ledger and the rest. Auth.js v5 for sessions. Redis for the BullMQ job queue and pub/sub. Anthropic Claude vision API for extraction (OpenAI fallback planned). S3-compatible object storage (filesystem in dev). Socket.IO for live extraction-status pushes. TypeScript strict everywhere.
+Next.js 15 on the App Router. NestJS on the Fastify adapter. PostgreSQL with Drizzle for the ledger and the rest. Auth.js v5 for sessions. Redis for the BullMQ job queue and pub/sub. Anthropic Claude vision for extraction with OpenAI GPT-4o vision as a single-hop fallback on retryable infrastructure errors. S3-compatible object storage (filesystem in dev). Socket.IO for live extraction-status pushes. TypeScript strict everywhere.
 
 See [docs/architecture.md](./docs/architecture.md) for how the pieces fit together, and [docs/adr/](./docs/adr/) for the specific choices and the trade-offs behind them.
 
 ## What works
 
 - Double-entry ledger with sum-of-debits = sum-of-credits enforced by a deferred trigger (ADR-0001, ADR-0006)
-- Receipt upload and Anthropic vision extraction running through a BullMQ queue (ADR-0005, ADR-0007)
+- Receipt upload and Anthropic vision extraction running through a BullMQ queue, with optional OpenAI fallback on retryable infrastructure errors (ADR-0005, ADR-0007, ADR-0015); `GET /extractions/fallback-stats` and the budget banner surface fallback usage to the operator
 - Review, edit, confirm UI that posts the journal entry (ADR-0006); confirmed receipts pre-fill account pickers from your own history (ADR-0013)
 - Per-currency money formatting and parsing (JPY 0 decimals, BHD 3) via @vellum/core
 - Daily extraction budget cap, system-wide and per-user, with predicted-cost gating at enqueue (ADR-0011, ADR-0014); `GET /budget/today` plus a header banner show live spend
@@ -30,7 +30,6 @@ See [docs/architecture.md](./docs/architecture.md) for how the pieces fit togeth
 ## Roadmap
 
 - [ ] First hosted deploy (single-user) and demo URL
-- [ ] OpenAI vision as a fallback provider behind the same interface
 - [ ] Plaid sandbox import to seed bank transactions alongside receipts
 - [ ] Natural language transaction queries
 - [ ] Anomaly detection on transactions
