@@ -155,9 +155,28 @@ export class AccountsService {
       .innerJoin(sql`journal_entries je`, sql`je.id = ${extractions.journalEntryId}`)
       .innerJoin(ledgerLines, eq(ledgerLines.journalEntryId, extractions.journalEntryId))
       .where(
+        // Three regexp_replace calls mirror normalizeVendor:
+        //   1. collapse runs of whitespace,
+        //   2. strip leading "the ",
+        //   3. strip trailing corporate suffix.
+        // btrim runs first to drop surrounding whitespace; lower runs
+        // last? No - lower has to run before pattern matches so the
+        // regex stays case-insensitive without an extra 'i' flag on
+        // each call.
         sql`${extractions.createdById} = ${userId}
           and ${extractions.journalEntryId} is not null
-          and regexp_replace(lower(btrim(${extractions.receipt}->'vendor'->>'name')), '\\s+', ' ', 'g') = ${needle}`,
+          and btrim(
+                regexp_replace(
+                  regexp_replace(
+                    regexp_replace(
+                      lower(btrim(${extractions.receipt}->'vendor'->>'name')),
+                      '\\s+', ' ', 'g'
+                    ),
+                    '^the\\s+', '', ''
+                  ),
+                  '[\\s,.]+(inc|llc|ltd|co|corp|company|corporation)\\.?$', '', ''
+                )
+              ) = ${needle}`,
       )
       .groupBy(ledgerLines.side, ledgerLines.accountId);
 
@@ -203,12 +222,22 @@ export interface AccountBalance {
 }
 
 /**
- * Lowercase, trim, collapse runs of whitespace to one space. Same
- * normalization applied DB-side (regexp_replace + lower + btrim) so
- * both sides of the equality see the same canonical form.
+ * Lowercase, trim, collapse whitespace, drop leading "the ", strip
+ * trailing corporate suffix words ("inc", "llc", "ltd", "co", "corp",
+ * "company", "corporation") so OCR variants like "Blue Bottle, Inc."
+ * and "Blue Bottle" group together (ADR-0013 limit #1, second pass).
+ *
+ * Same normalization is applied DB-side as a chain of regexp_replace
+ * calls so both sides of the equality see the same canonical form.
+ * Deliberately predictable: a Levenshtein / embeddings approach is
+ * a separate ADR, this stays in the "you can guess why it matched"
+ * band.
  */
 export function normalizeVendor(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+  let v = s.trim().toLowerCase().replace(/\s+/g, ' ');
+  v = v.replace(/^the\s+/, '');
+  v = v.replace(/[\s,.]+(?:inc|llc|ltd|co|corp|company|corporation)\.?$/, '');
+  return v.trim();
 }
 
 function isUniqueViolation(err: unknown): boolean {

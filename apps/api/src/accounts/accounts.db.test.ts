@@ -397,6 +397,87 @@ describe('AccountsController (integration)', () => {
       expect(res.json()).toEqual({ debit: null, credit: null });
     });
   });
+
+  describe('GET /accounts/suggest with vendor suffix stripping', () => {
+    let acmeExpense: string;
+    let acmeCard: string;
+
+    beforeAll(async () => {
+      const exp = await post(
+        { code: '5200-acme', name: 'Acme Office Supplies', type: 'EXPENSE' },
+        'idem-acme-exp',
+      );
+      const card = await post(
+        { code: '2300-acme-card', name: 'Card B', type: 'LIABILITY' },
+        'idem-acme-card',
+      );
+      acmeExpense = (exp.json() as { id: string }).id;
+      acmeCard = (card.json() as { id: string }).id;
+
+      await sql`INSERT INTO uploads (id, storage_key, mime_type, size_bytes, sha256, created_by_id)
+                VALUES ('upl_acme_seed', 'acme/key', 'image/png', 1, 'acme-hash', 'usr_test')`;
+
+      const seedSuffix = async (eid: string, jeId: string, vendor: string, occurred: string) => {
+        const receipt = JSON.stringify({ vendor: { name: vendor } });
+        await sql`INSERT INTO journal_entries (id, occurred_at, description, currency, created_by_id)
+                  VALUES (${jeId}, ${occurred}::timestamptz, ${vendor}, 'USD', 'usr_test')`;
+        await sql`INSERT INTO ledger_lines (journal_entry_id, account_id, side, amount, position)
+                  VALUES (${jeId}, ${acmeExpense}, 'DEBIT', 500, 0),
+                         (${jeId}, ${acmeCard}, 'CREDIT', 500, 1)`;
+        await sql`INSERT INTO extractions (id, upload_id, provider, model, prompt_version,
+                                            request_hash, status, receipt, created_by_id,
+                                            journal_entry_id, confirmed_by_id, confirmed_at)
+                  VALUES (${eid}, 'upl_acme_seed', 'mock', 'mock', 'v1',
+                          ${eid + '-hash'}, 'succeeded',
+                          ${receipt}::jsonb,
+                          'usr_test', ${jeId}, 'usr_test', ${occurred}::timestamptz)`;
+      };
+
+      // Four confirmed extractions under different OCR variants that
+      // all refer to the same business. The match should treat them as
+      // one group.
+      await seedSuffix('ext_ac_1', 'je_ac_1', 'Acme Inc', '2026-06-01T10:00:00Z');
+      await seedSuffix('ext_ac_2', 'je_ac_2', 'Acme, LLC', '2026-06-02T10:00:00Z');
+      await seedSuffix('ext_ac_3', 'je_ac_3', 'Acme Co.', '2026-06-03T10:00:00Z');
+      await seedSuffix('ext_ac_4', 'je_ac_4', 'The Acme', '2026-06-04T10:00:00Z');
+    });
+
+    it('groups "Acme Inc" and "Acme, LLC" and "Acme Co." and "The Acme" under "Acme"', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=Acme',
+        headers: { cookie },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as VendorSuggestionsResponse;
+      expect(body.debit).toEqual({ accountId: acmeExpense, count: 4 });
+      expect(body.credit).toEqual({ accountId: acmeCard, count: 4 });
+    });
+
+    it('a lookup with the suffix also matches the stripped form', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=' + encodeURIComponent('Acme, Inc.'),
+        headers: { cookie },
+      });
+      const body = res.json() as VendorSuggestionsResponse;
+      expect(body.debit?.accountId).toBe(acmeExpense);
+      expect(body.debit?.count).toBe(4);
+    });
+
+    it('does not strip non-suffix words like "Coffee"', async () => {
+      // "Blue Bottle Coffee" (from existing seed? no) - just verify that
+      // a similar-shape name without one of the recognized suffixes is
+      // not stripped, by querying a vendor that does not exist in seed.
+      const res = await app.inject({
+        method: 'GET',
+        url: '/accounts/suggest?vendor=' + encodeURIComponent('Acme Coffee'),
+        headers: { cookie },
+      });
+      const body = res.json() as VendorSuggestionsResponse;
+      expect(body.debit).toBeNull();
+    });
+  });
 });
 
 interface VendorSuggestionsResponse {
