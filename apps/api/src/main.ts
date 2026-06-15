@@ -5,6 +5,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyRateLimit from '@fastify/rate-limit';
 import { AppModule } from './app.module.js';
 import { loadEnv } from './config/env.js';
 import { genRequestId } from './observability/request-id.js';
@@ -44,6 +45,31 @@ async function bootstrap(): Promise<void> {
     hsts: env.isProduction
       ? { maxAge: 15_552_000, includeSubDomains: true, preload: false }
       : false,
+  });
+
+  // Global per-IP rate limit. FastifyAdapter is constructed with
+  // trustProxy: true, so the source IP comes from X-Forwarded-For
+  // when an LB sits in front. 600 req/min is generous for normal
+  // browsing (one user logged into the web ledger averages well
+  // under that) but cuts off scripted enumeration of the public
+  // probe endpoints (/healthz, /readyz) before it can amplify into
+  // a DB roundtrip storm.
+  //
+  // The cap is global, not per-route, on purpose: a single bucket
+  // is one number to reason about. If a real route ever needs its
+  // own ceiling (auth-related is the usual candidate), that lands
+  // through a route-level config in a future PR.
+  await app.register(fastifyRateLimit, {
+    global: true,
+    max: 600,
+    timeWindow: '1 minute',
+    addHeadersOnExceeding: { 'x-ratelimit-limit': true, 'x-ratelimit-remaining': true },
+    addHeaders: {
+      'x-ratelimit-limit': true,
+      'x-ratelimit-remaining': true,
+      'x-ratelimit-reset': true,
+      'retry-after': true,
+    },
   });
 
   await app.register(fastifyMultipart, {
