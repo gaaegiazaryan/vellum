@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useState } from 'react';
 import { confirmExtractionAction, type ConfirmState } from './actions';
+import { buildLinesJson, isBalanced, sumMajor } from './split-helpers';
 
 export interface AccountOption {
   id: string;
@@ -63,14 +64,17 @@ export function ConfirmForm({
   const [creditAccountId, setCreditAccountId] = useState(creditDefault);
   const [creditAmountMajor, setCreditAmountMajor] = useState(defaultTotal);
 
-  // Live totals on the split path. The values are major-unit decimals
-  // (locale-independent dot decimals); a NaN value drops out of the
-  // sum so a partial typing state does not silently flip the form to
-  // "balanced" when it isn't.
+  // Live totals on the split path. sumMajor / isBalanced live in
+  // split-helpers.ts so a refactor that breaks the live indicator
+  // is caught by unit tests rather than by a real submission failing
+  // at the api layer.
   const debitTotal = sumMajor(debitRows.map((r) => r.amountMajor));
   const creditTotal = sumMajor([creditAmountMajor]);
   const balanced = split
-    ? toCents(debitTotal) === toCents(creditTotal) && toCents(debitTotal) > 0
+    ? isBalanced(
+        debitRows.map((r) => r.amountMajor),
+        [creditAmountMajor],
+      )
     : true;
 
   function startSplit(): void {
@@ -116,23 +120,12 @@ export function ConfirmForm({
     setDebitRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
 
-  // When split, build the JSON payload the server action consumes. Done
-  // synchronously off render so the value is up to date when the form
-  // submits.
+  // Built synchronously off render so the hidden field is up to date
+  // when the form submits. buildLinesJson is the single place that
+  // knows the wire shape; tests cover the memo-trim and the credit-
+  // tail ordering so a future refactor can't silently break it.
   const linesJson = split
-    ? JSON.stringify([
-        ...debitRows.map((r) => ({
-          side: 'DEBIT',
-          accountId: r.accountId,
-          amountMajor: r.amountMajor,
-          memo: r.memo?.trim() || undefined,
-        })),
-        {
-          side: 'CREDIT',
-          accountId: creditAccountId,
-          amountMajor: creditAmountMajor,
-        },
-      ])
+    ? buildLinesJson(debitRows, { accountId: creditAccountId, amountMajor: creditAmountMajor })
     : '';
 
   return (
@@ -382,23 +375,6 @@ function SplitTable({
       </p>
     </fieldset>
   );
-}
-
-function sumMajor(values: string[]): number {
-  let s = 0;
-  for (const v of values) {
-    const n = Number(v);
-    if (Number.isFinite(n)) s += n;
-  }
-  return s;
-}
-
-function toCents(n: number): number {
-  // Avoid floating-point sum mismatches by comparing rounded
-  // hundredths. Currency-specific scaling lives on the api side; the
-  // banner just needs "do the rendered totals match?" which is 2dp in
-  // every realistic case for the live indicator.
-  return Math.round(n * 100);
 }
 
 function fmt(n: number): string {
