@@ -227,6 +227,11 @@ export default async function ReviewExtractionPage({
           defaultCurrency={receipt.currency}
           suggestedDebitId={suggestions.debit?.accountId ?? null}
           suggestedCreditId={suggestions.credit?.accountId ?? null}
+          receiptSubtotalMajor={minorToMajor(receipt.subtotalMinor, receipt.currency)}
+          receiptTaxes={receipt.taxes.map((t) => ({
+            name: t.name,
+            amountMajor: minorToMajor(t.amountMinor, receipt.currency),
+          }))}
         />
       )}
     </main>
