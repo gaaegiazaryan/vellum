@@ -364,3 +364,38 @@ main.ledger {
   text-decoration: underline;
   cursor: pointer;
 }
+
+.split-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.split-fieldset legend {
+  padding: 0 0.5rem;
+  font-weight: 600;
+}
+
+.split-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.split-table th,
+.split-table td {
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.split-table th {
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.split-table input,
+.split-table select {
+  width: 100%;
+  box-sizing: border-box;
+}
