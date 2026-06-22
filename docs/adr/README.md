@@ -30,3 +30,4 @@ An accepted ADR is immutable. If we change our minds, we write a new ADR that su
 - [0015](./0015-provider-fallback.md): Provider fallback strategy
 - [0016](./0016-error-response-envelope.md): Error response envelope
 - [0017](./0017-receipt-multi-line-confirm.md): Multi-line journal entry from a single receipt
+- [0018](./0018-plaid-sandbox-import.md): Plaid sandbox import for bank transactions
