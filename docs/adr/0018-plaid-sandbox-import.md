@@ -79,3 +79,9 @@ Three known limits, in order of how much they will hurt:
 - **15-minute freshness window.** Acceptable for a bookkeeping app; the alternative is webhooks which need public inbound, which a self-host typically does not have.
 
 Impl PRs follow this one: schema + migrations, then encryption helper, then the endpoints, then the sync worker, then the web page.
+
+## Impl notes
+
+Land-as-built clarifications discovered during impl. These do not amend the Decision; they document what the code shipped with so a future reader does not assume an unintended drift from this ADR.
+
+- **Cipher uses Node's classic `crypto.createCipheriv`, not `crypto.subtle`.** Functionally identical AES-256-GCM bytes; the sync API is honest about the fact that seal/open are not called from a Worker and there is no Promise worth awaiting. See `apps/api/src/plaid/token-cipher.ts`.
