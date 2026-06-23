@@ -1,11 +1,13 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { PlaidApi } from 'plaid';
 import { CountryCode, Products } from 'plaid';
+import type { Queue } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
 import { plaidAccounts, plaidItems } from '../db/schema/plaid.js';
 import { TokenCipher } from './token-cipher.js';
 import { PLAID_CLIENT_TOKEN } from './plaid-client.js';
+import { PLAID_SYNC_QUEUE, type PlaidSyncJobData } from './plaid-sync.queue.js';
 
 export interface PlaidLinkToken {
   linkToken: string;
@@ -39,6 +41,7 @@ export class PlaidService {
     @Inject(PLAID_CLIENT_TOKEN) private readonly plaid: PlaidApi,
     @Inject(DATABASE_TOKEN) private readonly db: Db,
     private readonly cipher: TokenCipher,
+    @Optional() @Inject(PLAID_SYNC_QUEUE) private readonly syncQueue?: Queue<PlaidSyncJobData>,
   ) {}
 
   /**
@@ -77,7 +80,7 @@ export class PlaidService {
 
     const sealed = this.cipher.seal(accessToken);
 
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const [item] = await tx
         .insert(plaidItems)
         .values({
@@ -105,6 +108,20 @@ export class PlaidService {
       );
       return { itemId: item.id };
     });
+    // First-time sync enqueued after the tx commits so a rollback can
+    // never leave a sync job pointing at a phantom item. The cron tick
+    // covers this row anyway within 15 min; the eager enqueue just
+    // shortens the freshness window on the operator's first link.
+    if (this.syncQueue) {
+      await this.syncQueue
+        .add('sync-item', { kind: 'sync-item', plaidItemRowId: result.itemId })
+        .catch((err) => {
+          this.logger.warn(
+            `failed to enqueue first-time sync for ${result.itemId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+    }
+    return result;
   }
 
   async listItems(userId: string): Promise<PlaidItemWithAccounts[]> {
