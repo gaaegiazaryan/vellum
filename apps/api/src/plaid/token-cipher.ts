@@ -1,11 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  randomBytes,
-  timingSafeEqual,
-} from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { AUTH_SECRET_TOKEN } from '../auth/auth.guard.js';
 
 const ALGO = 'aes-256-gcm';
@@ -34,30 +28,19 @@ export interface SealedToken {
  * rotates the secret. The IV is 12 bytes random per encryption; the
  * auth tag is appended to the ciphertext and read on decrypt.
  *
- * Cipher and IV are persisted as separate columns
- * (plaid_items.access_token_cipher, access_token_iv) so a database
- * leak that exposes the cipher without the IV still does not yield
- * the plaintext under GCM's authentication guarantee.
- *
- * The output `cipher` field contains the GCM ciphertext + auth tag
- * concatenated in that order, base64-encoded. open() splits them
- * back apart using the known 16-byte tag length.
+ * Wire format: `cipher` is base64(ciphertext || tag) with the tag
+ * being the last 16 bytes; `iv` is base64 of the 12-byte IV. open()
+ * splits on the known tag length.
  */
 @Injectable()
 export class TokenCipher {
   private readonly key: Buffer;
 
   constructor(@Inject(AUTH_SECRET_TOKEN) secret: string) {
-    if (!secret || secret.length < 32) {
-      throw new Error('AUTH_SECRET must be at least 32 characters to derive an AES-256 key');
-    }
     this.key = deriveKey(secret);
   }
 
   seal(plaintext: string): SealedToken {
-    if (typeof plaintext !== 'string' || plaintext.length === 0) {
-      throw new Error('seal() requires a non-empty plaintext string');
-    }
     const iv = randomBytes(IV_LENGTH);
     const cipherStream = createCipheriv(ALGO, this.key, iv);
     const ciphertext = Buffer.concat([
@@ -73,13 +56,7 @@ export class TokenCipher {
 
   open(sealed: SealedToken): string {
     const ivBuf = Buffer.from(sealed.iv, 'base64');
-    if (ivBuf.length !== IV_LENGTH) {
-      throw new Error('iv length mismatch');
-    }
     const blob = Buffer.from(sealed.cipher, 'base64');
-    if (blob.length < AUTH_TAG_LENGTH + 1) {
-      throw new Error('ciphertext too short to contain the auth tag');
-    }
     const ciphertext = blob.subarray(0, blob.length - AUTH_TAG_LENGTH);
     const tag = blob.subarray(blob.length - AUTH_TAG_LENGTH);
     const decipher = createDecipheriv(ALGO, this.key, ivBuf);
@@ -87,32 +64,14 @@ export class TokenCipher {
     const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     return plaintext.toString('utf8');
   }
-
-  /**
-   * Defensive equality check for the rare path where the caller has
-   * the plaintext and wants to confirm it matches a stored sealed
-   * record without re-encrypting (which is non-deterministic under
-   * a fresh IV anyway). Uses timingSafeEqual on the decrypted side.
-   */
-  matches(sealed: SealedToken, expectedPlaintext: string): boolean {
-    let decrypted: string;
-    try {
-      decrypted = this.open(sealed);
-    } catch {
-      return false;
-    }
-    const a = Buffer.from(decrypted, 'utf8');
-    const b = Buffer.from(expectedPlaintext, 'utf8');
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
-  }
 }
 
 function deriveKey(secret: string): Buffer {
-  // SHA-256(label || secret) gives a deterministic 32-byte key.
+  // SHA-256(label || \0 || secret) gives a deterministic 32-byte key.
   // HKDF would be stricter; SHA-256 is sufficient here because the
-  // secret is already the high-entropy AUTH_SECRET and we only need
-  // domain separation, not extract-then-expand semantics.
+  // secret is already the high-entropy AUTH_SECRET (validated min 32
+  // chars in env.ts) and we only need domain separation, not
+  // extract-then-expand semantics.
   const h = createHash('sha256');
   h.update(DERIVATION_LABEL);
   h.update('\0');
