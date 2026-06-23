@@ -51,6 +51,13 @@ const envSchema = z
       .regex(/^(0|0\.\d+|1(\.0+)?)$/, 'must be a decimal between 0 and 1 inclusive')
       .transform((v) => Number(v))
       .optional(),
+    PLAID_ENABLED: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+    PLAID_ENV: z.enum(['sandbox', 'development', 'production']).optional(),
+    PLAID_CLIENT_ID: z.string().min(1).optional(),
+    PLAID_SECRET: z.string().min(1).optional(),
   })
   .refine((env) => env.EXTRACTION_PROVIDER !== 'anthropic' || Boolean(env.ANTHROPIC_API_KEY), {
     message: 'EXTRACTION_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set',
@@ -88,6 +95,14 @@ const envSchema = z
       message:
         'STORAGE_DRIVER=s3 requires S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY',
       path: ['STORAGE_DRIVER'],
+    },
+  )
+  .refine(
+    (env) =>
+      !env.PLAID_ENABLED || Boolean(env.PLAID_ENV && env.PLAID_CLIENT_ID && env.PLAID_SECRET),
+    {
+      message: 'PLAID_ENABLED=true requires PLAID_ENV, PLAID_CLIENT_ID, and PLAID_SECRET',
+      path: ['PLAID_ENABLED'],
     },
   )
   .transform((env) => ({

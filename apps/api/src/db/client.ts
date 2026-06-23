@@ -5,14 +5,16 @@ import * as credentialsSchema from './schema/credentials.js';
 import * as extractionsSchema from './schema/extractions.js';
 import * as idempotencySchema from './schema/idempotency.js';
 import * as ledgerSchema from './schema/ledger.js';
+import * as plaidSchema from './schema/plaid.js';
 import * as uploadsSchema from './schema/uploads.js';
 
-const schema = {
+export const schema = {
   ...authSchema,
   ...credentialsSchema,
   ...extractionsSchema,
   ...idempotencySchema,
   ...ledgerSchema,
+  ...plaidSchema,
   ...uploadsSchema,
 };
 
