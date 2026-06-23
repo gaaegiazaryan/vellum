@@ -21,6 +21,7 @@
     "postgres": "^3.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-plaid-link": "^4.1.1",
     "socket.io-client": "^4.8.3",
     "zod": "^4.0.0"
   },
