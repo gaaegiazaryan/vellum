@@ -64,7 +64,12 @@ describe('Plaid schema (integration)', () => {
       status: 'ok',
       last_sync_cursor: 'cursor-1',
     });
-    expect(row?.created_at).toBeInstanceOf(Date);
+    // postgres-js returns timestamptz as a string when queried
+    // directly (no Drizzle row coercion in this raw-SQL probe).
+    // Accept either shape and parse to confirm the value lands.
+    const createdAt = row?.created_at;
+    expect(typeof createdAt === 'string' || createdAt instanceof Date).toBe(true);
+    expect(Number.isFinite(new Date(createdAt as string | Date).getTime())).toBe(true);
   });
 
   it('cascades delete from plaid_items down to plaid_accounts and bank_transactions', async () => {
