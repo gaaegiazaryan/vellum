@@ -62,6 +62,8 @@ export default async function AppHome() {
           <Link href="/app/entries/new">+ new entry</Link>
           {' · '}
           <Link href="/app/uploads">upload receipt</Link>
+          {' · '}
+          <Link href="/app/banks">banks</Link>
         </p>
         <BudgetBanner />
       </header>

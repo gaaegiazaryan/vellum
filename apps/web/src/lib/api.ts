@@ -17,6 +17,7 @@ export interface ApiClient {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body: unknown, idempotencyKey: string): Promise<T>;
   postMultipart<T>(path: string, formData: FormData): Promise<T>;
+  delete(path: string): Promise<void>;
 }
 
 export async function apiClient(): Promise<ApiClient> {
@@ -72,6 +73,17 @@ export async function apiClient(): Promise<ApiClient> {
         cache: 'no-store',
       });
       return handle<T>(res);
+    },
+    async delete(path: string): Promise<void> {
+      const res = await fetch(`${base}${path}`, {
+        method: 'DELETE',
+        headers: buildHeaders(),
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new ApiError(res.status, text);
+      }
     },
   };
 }
