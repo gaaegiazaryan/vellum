@@ -71,6 +71,13 @@
       "when": 1781339181682,
       "tag": "0009_giant_centennial",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782196648788,
+      "tag": "0010_lethal_mordo",
+      "breakpoints": true
     }
   ]
 }
