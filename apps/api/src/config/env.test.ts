@@ -155,4 +155,69 @@ describe('loadEnv', () => {
   it('rejects an unknown STORAGE_DRIVER', () => {
     expect(() => loadEnv({ ...base, STORAGE_DRIVER: 'gcs' })).toThrow(EnvValidationError);
   });
+
+  it('PLAID is off by default and the credential fields are unset', () => {
+    const env = loadEnv({ ...base });
+    expect(env.PLAID_ENABLED).toBe(false);
+    expect(env.PLAID_CLIENT_ID).toBeUndefined();
+    expect(env.PLAID_SECRET).toBeUndefined();
+    expect(env.PLAID_ENV).toBeUndefined();
+  });
+
+  it('accepts PLAID_ENABLED=true with the three required credential fields', () => {
+    const env = loadEnv({
+      ...base,
+      PLAID_ENABLED: 'true',
+      PLAID_ENV: 'sandbox',
+      PLAID_CLIENT_ID: 'cid',
+      PLAID_SECRET: 'csec',
+    });
+    expect(env.PLAID_ENABLED).toBe(true);
+    expect(env.PLAID_ENV).toBe('sandbox');
+  });
+
+  it('rejects PLAID_ENABLED=true without PLAID_ENV', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        PLAID_ENABLED: 'true',
+        PLAID_CLIENT_ID: 'cid',
+        PLAID_SECRET: 'csec',
+      }),
+    ).toThrow(EnvValidationError);
+  });
+
+  it('rejects PLAID_ENABLED=true without PLAID_CLIENT_ID', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        PLAID_ENABLED: 'true',
+        PLAID_ENV: 'sandbox',
+        PLAID_SECRET: 'csec',
+      }),
+    ).toThrow(EnvValidationError);
+  });
+
+  it('rejects PLAID_ENABLED=true without PLAID_SECRET', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        PLAID_ENABLED: 'true',
+        PLAID_ENV: 'sandbox',
+        PLAID_CLIENT_ID: 'cid',
+      }),
+    ).toThrow(EnvValidationError);
+  });
+
+  it('rejects an unknown PLAID_ENV', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        PLAID_ENABLED: 'true',
+        PLAID_ENV: 'staging',
+        PLAID_CLIENT_ID: 'cid',
+        PLAID_SECRET: 'csec',
+      }),
+    ).toThrow(EnvValidationError);
+  });
 });
