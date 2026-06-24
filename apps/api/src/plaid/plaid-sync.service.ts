@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { PlaidApi } from 'plaid';
 import { eq, isNull, lt, or } from 'drizzle-orm';
+import { currency, decimalsFor } from '@vellum/core';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
 import { bankTransactions, plaidAccounts, plaidItems } from '../db/schema/plaid.js';
 import { TokenCipher } from './token-cipher.js';
@@ -166,17 +167,34 @@ function toRow(t: PlaidTransaction, accountIdByPlaidAccountId: Map<string, strin
   // Plaid's amount sign: positive = outflow (debit from the account).
   // We store the absolute value; the matching ADR derives direction
   // from the sign in raw_jsonb so we do not lose information.
-  const amountMinor = BigInt(Math.round(Math.abs(t.amount) * 100));
+  const currencyCode = t.iso_currency_code ?? t.unofficial_currency_code ?? 'USD';
+  const amountMinor = majorFloatToMinor(Math.abs(t.amount), currencyCode);
   return {
     plaidAccountId: accountRowId,
     plaidTransactionId: t.transaction_id,
     occurredAt,
     amountMinor,
-    currency: t.iso_currency_code ?? t.unofficial_currency_code ?? 'USD',
+    currency: currencyCode,
     merchantName: t.merchant_name,
     description: t.name,
     raw: t as unknown as object,
   };
+}
+
+function majorFloatToMinor(majorAbs: number, code: string): bigint {
+  // Plaid gives major-unit floats. Per-currency scale: USD/EUR -> 2,
+  // JPY/KRW -> 0, BHD/KWD -> 3. Multiply by 10^decimals and round to
+  // the nearest integer (Plaid sometimes has 0.0001 float noise on
+  // amounts that should be exact). Unknown codes fall back to 2 via
+  // decimalsFor's default in @vellum/core.
+  let decimals: number;
+  try {
+    decimals = decimalsFor(currency(code));
+  } catch {
+    decimals = 2;
+  }
+  const scale = 10 ** decimals;
+  return BigInt(Math.round(majorAbs * scale));
 }
 
 function parseOccurredAt(t: PlaidTransaction): Date {

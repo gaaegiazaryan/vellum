@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatMoney } from '@/lib/money';
 
 export interface BankSuggestion {
   bankTransactionId: string;
@@ -69,16 +70,6 @@ export function BankSuggestionPicker({ suggestions }: Props) {
       </label>
     </fieldset>
   );
-}
-
-function formatMoney(minorStr: string, currency: string): string {
-  // v1 assumes 2-decimal currencies on this surface (matches the
-  // existing confirm form's hardcoding). The per-currency-scale
-  // refactor on Day 17+ list applies here too when it lands.
-  const cents = Number(minorStr);
-  if (!Number.isFinite(cents)) return `${minorStr} ${currency}`;
-  const major = (cents / 100).toFixed(2);
-  return `${major} ${currency}`;
 }
 
 function formatDate(iso: string): string {

@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { pairAction, suggestForBankAction, type EntrySuggestion } from './actions';
+import { formatMoney } from '@/lib/money';
 
 interface Props {
   bankTransactionId: string;
@@ -104,10 +105,4 @@ export function PairButton({ bankTransactionId }: Props) {
       )}
     </div>
   );
-}
-
-function formatMoney(minorStr: string, currency: string): string {
-  const cents = Number(minorStr);
-  if (!Number.isFinite(cents)) return `${minorStr} ${currency}`;
-  return `${(cents / 100).toFixed(2)} ${currency}`;
 }

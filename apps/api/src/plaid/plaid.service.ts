@@ -3,6 +3,7 @@ import type { PlaidApi } from 'plaid';
 import { CountryCode, Products } from 'plaid';
 import type { Queue } from 'bullmq';
 import { and, desc, eq, isNull } from 'drizzle-orm';
+import { currency, decimalsFor } from '@vellum/core';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
 import { bankTransactions, plaidAccounts, plaidItems } from '../db/schema/plaid.js';
 import { TokenCipher } from './token-cipher.js';
@@ -114,7 +115,10 @@ export class PlaidService {
           subtype: a.subtype ?? null,
           mask: a.mask ?? null,
           currency: a.balances.iso_currency_code ?? a.balances.unofficial_currency_code ?? 'USD',
-          currentBalanceMinor: toMinor(a.balances.current),
+          currentBalanceMinor: toMinor(
+            a.balances.current,
+            a.balances.iso_currency_code ?? a.balances.unofficial_currency_code ?? 'USD',
+          ),
         })),
       );
       return { itemId: item.id };
@@ -260,9 +264,16 @@ export class PlaidService {
   }
 }
 
-function toMinor(amount: number | null | undefined): bigint | null {
+function toMinor(amount: number | null | undefined, code: string): bigint | null {
   if (amount === null || amount === undefined) return null;
-  // Plaid returns major-unit floats. Round to nearest cent. A future
-  // ADR can switch to per-currency scale; v1 sandbox is USD.
-  return BigInt(Math.round(amount * 100));
+  // Plaid returns major-unit floats. Per-currency scale via @vellum/core:
+  // USD/EUR -> 2, JPY/KRW -> 0, BHD/KWD -> 3. Unknown codes fall back
+  // to 2 (the safest default for user-issued and crypto codes).
+  let decimals: number;
+  try {
+    decimals = decimalsFor(currency(code));
+  } catch {
+    decimals = 2;
+  }
+  return BigInt(Math.round(amount * 10 ** decimals));
 }
