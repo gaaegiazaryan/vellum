@@ -14,6 +14,7 @@ import { UploadsModule } from './uploads/uploads.module.js';
 import { WebsocketModule } from './websocket/websocket.module.js';
 import { ExtractionsModule } from './extractions/extractions.module.js';
 import { PlaidModule } from './plaid/plaid.module.js';
+import { MatchingModule } from './matching/matching.module.js';
 import { REDACT_PATHS } from './observability/redact-paths.js';
 import type { Env } from './config/env.js';
 
@@ -46,6 +47,7 @@ export class AppModule {
         UploadsModule.forRoot(env),
         ExtractionsModule.forRoot(env),
         PlaidModule.forRoot(env),
+        MatchingModule,
         HealthzModule,
       ],
     };
