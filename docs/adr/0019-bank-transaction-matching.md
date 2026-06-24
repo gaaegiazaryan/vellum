@@ -79,3 +79,9 @@ Three known limits, in order of how much they will hurt:
 - **Vendor name signal is noisy.** The 0.15 weight reflects this; the fuzzy vendor ADR will sharpen it. v1 still beats manual reconciliation because the amount + date signal carries most of the discrimination.
 
 Impl PRs follow this one: migration + partial unique index, then MatchingService + endpoints + db tests, then the two web touch-points (confirm-receipt pair suggestion, `/app/banks` pair button).
+
+## Impl notes
+
+Land-as-built clarifications discovered during impl. They do not amend the Decision.
+
+- **`POST /matching/suggest-for-receipt` added alongside the GET endpoints.** The Decision text says the confirm-receipt UI calls `GET /matching/suggest-for-entry/:journalEntryId`, but at confirm time the journal entry does not exist yet (it is created BY the confirm submit). The pre-confirm UI needs the same scorer over receipt-side facts directly. Body shape: `{ totalMinor, occurredAt, currency, vendorName? }`. Same user scoping, same currency filter, same top-3 threshold as the GET variant. The GET endpoint stays for `/app/banks`-side reads where the entry already exists.

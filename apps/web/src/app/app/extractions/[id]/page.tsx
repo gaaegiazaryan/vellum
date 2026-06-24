@@ -5,6 +5,7 @@ import { apiClient, ApiError } from '@/lib/api';
 import { Money, currency, formatMinorUnits, InvalidCurrencyError } from '@vellum/core';
 import { ConfirmForm, type AccountOption } from './confirm-form';
 import { StatusListener } from './status-listener';
+import type { BankSuggestion } from './bank-suggestion-picker';
 
 export const metadata = {
   title: 'Review extraction - Vellum',
@@ -179,6 +180,26 @@ export default async function ReviewExtractionPage({
     suggestions = { debit: null, credit: null };
   }
 
+  // Pre-fetch bank candidate matches per ADR-0019. Plaid not configured
+  // (404) is the common case for self-hosters who do not use bank
+  // import; treat it the same as "no matches" and skip the picker.
+  let bankSuggestions: BankSuggestion[] = [];
+  try {
+    const res = await client.post<{ suggestions: BankSuggestion[] }>(
+      '/matching/suggest-for-receipt',
+      {
+        totalMinor: receipt.totalMinor,
+        occurredAt: receipt.occurredAt,
+        currency: receipt.currency,
+        vendorName: receipt.vendor.name,
+      },
+      `match-suggest-${extraction.id}`,
+    );
+    bankSuggestions = res.suggestions;
+  } catch {
+    bankSuggestions = [];
+  }
+
   return (
     <main className="ledger">
       <header className="ledger-header">
@@ -232,6 +253,7 @@ export default async function ReviewExtractionPage({
             name: t.name,
             amountMajor: minorToMajor(t.amountMinor, receipt.currency),
           }))}
+          bankSuggestions={bankSuggestions}
         />
       )}
     </main>
