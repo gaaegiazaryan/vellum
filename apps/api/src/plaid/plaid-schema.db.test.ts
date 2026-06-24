@@ -7,7 +7,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const migrationsFolder = resolve(__dirname, '../migrations');
+const migrationsFolder = resolve(__dirname, '../db/migrations');
 
 /**
  * Schema-level smoke for the Plaid tables landed in ADR-0018. The
