@@ -119,6 +119,10 @@ export const bankTransactions = pgTable(
     merchantName: text('merchant_name'),
     description: text('description'),
     raw: jsonb('raw').notNull(),
+    // FK to journal_entries.id added in migration 0012 (cross-file
+    // pattern: ledger.ts and plaid.ts cannot import each other without
+    // triggering drizzle-kit's loader issues). ON DELETE SET NULL so a
+    // journal_entry deletion leaves the bank tx in the unmatched pool.
     journalEntryId: text('journal_entry_id'),
     matchedAt: timestamp('matched_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),

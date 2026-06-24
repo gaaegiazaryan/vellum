@@ -130,4 +130,44 @@ describe('Plaid schema (integration)', () => {
     `) as Array<{ n: number }>;
     expect(rows[0]?.n).toBe(2);
   });
+
+  it('FK on journal_entry_id is enforced (inserting a phantom id fails)', async () => {
+    await sql`INSERT INTO plaid_items (id, user_id, plaid_item_id, access_token_cipher, access_token_iv)
+              VALUES ('it_fk', 'usr_plaid_test', 'item-fk', 'c', 'iv')`;
+    await sql`INSERT INTO plaid_accounts (id, plaid_item_id, plaid_account_id, name, type, currency)
+              VALUES ('ac_fk', 'it_fk', 'acct-fk', 'Card', 'credit', 'USD')`;
+    await expect(
+      sql`INSERT INTO bank_transactions
+            (id, plaid_account_id, plaid_transaction_id, occurred_at, amount_minor, currency, raw, journal_entry_id)
+          VALUES
+            ('tx_phantom', 'ac_fk', 'txn-phantom', now(), 100, 'USD', '{}'::jsonb, 'je_does_not_exist')`,
+    ).rejects.toThrow();
+  });
+
+  it('FK on journal_entry_id nulls bank tx on parent delete (ON DELETE SET NULL)', async () => {
+    await sql`INSERT INTO plaid_items (id, user_id, plaid_item_id, access_token_cipher, access_token_iv)
+              VALUES ('it_sn', 'usr_plaid_test', 'item-sn', 'c', 'iv')`;
+    await sql`INSERT INTO plaid_accounts (id, plaid_item_id, plaid_account_id, name, type, currency)
+              VALUES ('ac_sn', 'it_sn', 'acct-sn', 'Card', 'credit', 'USD')`;
+    await sql`INSERT INTO journal_entries (id, occurred_at, description, currency)
+              VALUES ('je_sn', now(), 'parent', 'USD')`;
+    await sql`INSERT INTO bank_transactions
+                (id, plaid_account_id, plaid_transaction_id, occurred_at, amount_minor, currency, raw, journal_entry_id, matched_at)
+              VALUES
+                ('tx_sn', 'ac_sn', 'txn-sn', now(), 100, 'USD', '{}'::jsonb, 'je_sn', now())`;
+
+    await sql`DELETE FROM journal_entries WHERE id = 'je_sn'`;
+
+    const [row] =
+      (await sql`SELECT journal_entry_id, matched_at FROM bank_transactions WHERE id = 'tx_sn'`) as Array<{
+        journal_entry_id: string | null;
+        matched_at: Date | string | null;
+      }>;
+    expect(row?.journal_entry_id).toBeNull();
+    // matched_at is intentionally NOT reset by the FK action; the unpair
+    // service nulls it explicitly on user-initiated unpair. A DB-level
+    // SET NULL on a cascade is a different intent and we preserve the
+    // "when did we last think this was matched" hint.
+    expect(row?.matched_at).not.toBeNull();
+  });
 });
