@@ -132,5 +132,12 @@ export const bankTransactions = pgTable(
     index('bank_transactions_unmatched_idx')
       .on(table.plaidAccountId)
       .where(sql`${table.journalEntryId} is null`),
+    // Partial unique index per ADR-0019: one journal entry can be claimed
+    // by at most one bank transaction. Without it, two browser tabs could
+    // pair the same entry concurrently; the unique constraint stops that
+    // at the DB layer rather than via app-level check-then-update.
+    uniqueIndex('bank_transactions_journal_entry_id_unique_idx')
+      .on(table.journalEntryId)
+      .where(sql`${table.journalEntryId} is not null`),
   ],
 );
