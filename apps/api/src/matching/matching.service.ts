@@ -39,7 +39,31 @@ export class MatchingService {
   async suggestForEntry(userId: string, journalEntryId: string): Promise<BankSuggestion[]> {
     const entry = await this.loadEntryContext(userId, journalEntryId);
     if (!entry) return [];
+    return this.suggestForReceipt(userId, {
+      totalMinor: entry.totalMinor,
+      occurredAt: entry.occurredAt,
+      currency: entry.currency,
+      vendorName: entry.vendorName,
+    });
+  }
 
+  /**
+   * Pre-confirm variant: the receipt-side facts are passed directly
+   * (the journal entry does not exist yet). Same scorer, same user
+   * scoping, same currency filter. The confirm-receipt UI calls this
+   * to render the top-3 candidates BEFORE the user submits; the
+   * selected bankTransactionId then rides through the confirm request
+   * and the api pairs in the same transaction.
+   */
+  async suggestForReceipt(
+    userId: string,
+    facts: {
+      totalMinor: bigint;
+      occurredAt: Date;
+      currency: string;
+      vendorName: string | null;
+    },
+  ): Promise<BankSuggestion[]> {
     const candidates = await this.db
       .select({
         id: bankTransactions.id,
@@ -56,11 +80,11 @@ export class MatchingService {
         and(
           isNull(bankTransactions.journalEntryId),
           eq(plaidItems.userId, userId),
-          eq(bankTransactions.currency, entry.currency),
+          eq(bankTransactions.currency, facts.currency),
         ),
       );
 
-    return rankBank(candidates, entry).slice(0, SUGGEST_TOP_N);
+    return rankBank(candidates, facts).slice(0, SUGGEST_TOP_N);
   }
 
   /**

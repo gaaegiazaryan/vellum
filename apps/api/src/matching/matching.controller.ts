@@ -21,6 +21,13 @@ const pairBodySchema = z.object({
   bankTransactionId: z.string().min(1),
 });
 
+const suggestForReceiptBodySchema = z.object({
+  totalMinor: z.string().regex(/^\d+$/, 'totalMinor must be a non-negative integer string'),
+  occurredAt: z.string().min(1),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  vendorName: z.string().nullable().optional(),
+});
+
 @Controller('matching')
 @UseGuards(AuthGuard)
 export class MatchingController {
@@ -35,6 +42,26 @@ export class MatchingController {
     return this.matching
       .suggestForEntry(user.id, journalEntryId)
       .then((suggestions) => ({ suggestions }));
+  }
+
+  @Post('suggest-for-receipt')
+  @HttpCode(HttpStatus.OK)
+  async suggestForReceipt(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Body() body: unknown,
+  ): Promise<{ suggestions: BankSuggestion[] }> {
+    if (!user) throw new UnauthorizedException();
+    const parsed = suggestForReceiptBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({ error: 'validation_failed', issues: parsed.error.issues });
+    }
+    const suggestions = await this.matching.suggestForReceipt(user.id, {
+      totalMinor: BigInt(parsed.data.totalMinor),
+      occurredAt: new Date(parsed.data.occurredAt),
+      currency: parsed.data.currency,
+      vendorName: parsed.data.vendorName ?? null,
+    });
+    return { suggestions };
   }
 
   @Get('suggest-for-bank/:bankTransactionId')

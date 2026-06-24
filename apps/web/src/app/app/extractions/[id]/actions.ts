@@ -34,6 +34,7 @@ const formSchema = z.object({
     .string()
     .regex(/^[A-Z]{3}$/, 'currency must be a 3-letter code')
     .optional(),
+  bankTransactionId: z.string().min(1).optional(),
 });
 
 const splitLineSchema = z.object({
@@ -56,11 +57,12 @@ export async function confirmExtractionAction(
     linesJson: (formData.get('linesJson') as string) || undefined,
     occurredAt: (formData.get('occurredAt') as string) || undefined,
     currency: (formData.get('currency') as string)?.toUpperCase() || undefined,
+    bankTransactionId: (formData.get('bankTransactionId') as string) || undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'invalid form' };
   }
-  const { extractionId, linesJson, total: _total, ...rest } = parsed.data;
+  const { extractionId, linesJson, total: _total, bankTransactionId, ...rest } = parsed.data;
   void _total;
 
   // The currency code drives major-to-minor conversion on either path,
@@ -146,13 +148,37 @@ export async function confirmExtractionAction(
   }
 
   const client = await apiClient();
+  let confirmResult: { journalEntry: { id: string } };
   try {
-    await client.post(`/extractions/${extractionId}/confirm`, body, `confirm-${randomUUID()}`);
+    confirmResult = await client.post<{ journalEntry: { id: string } }>(
+      `/extractions/${extractionId}/confirm`,
+      body,
+      `confirm-${randomUUID()}`,
+    );
   } catch (err) {
     if (err instanceof ApiError) {
       return { error: friendly(err.status, err.body) };
     }
     return { error: 'network error while confirming' };
+  }
+
+  // Pair the picked bank transaction (if any) with the freshly-created
+  // journal entry. ADR-0019: the user picks the candidate BEFORE the
+  // confirm submit, so the pair happens in the same "click confirm"
+  // moment. Failure here is non-fatal; the entry exists and the user
+  // can pair it manually from /app/banks.
+  if (bankTransactionId) {
+    try {
+      await client.post(
+        '/matching/pair',
+        { journalEntryId: confirmResult.journalEntry.id, bankTransactionId },
+        `pair-${randomUUID()}`,
+      );
+    } catch {
+      // Silent. Entry was created; this is the only place the form
+      // submits, so we cannot show a partial-success state without
+      // routing the user to a different page first.
+    }
   }
 
   redirect('/app');

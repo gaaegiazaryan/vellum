@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState } from 'react';
 import { confirmExtractionAction, type ConfirmState } from './actions';
 import { buildLinesJson, isBalanced, sumMajor } from './split-helpers';
+import { BankSuggestionPicker, type BankSuggestion } from './bank-suggestion-picker';
 
 export interface AccountOption {
   id: string;
@@ -39,6 +40,7 @@ export function ConfirmForm({
   suggestedCreditId,
   receiptSubtotalMajor,
   receiptTaxes,
+  bankSuggestions,
 }: {
   extractionId: string;
   accounts: AccountOption[];
@@ -50,6 +52,7 @@ export function ConfirmForm({
   suggestedCreditId?: string | null;
   receiptSubtotalMajor?: string;
   receiptTaxes?: ReceiptTaxLine[];
+  bankSuggestions?: BankSuggestion[];
 }) {
   const accountIds = useMemo(() => new Set(accounts.map((a) => a.id)), [accounts]);
   const debitDefault = suggestedDebitId && accountIds.has(suggestedDebitId) ? suggestedDebitId : '';
@@ -226,6 +229,10 @@ export function ConfirmForm({
         <span>Description</span>
         <input name="description" type="text" maxLength={500} defaultValue={defaultDescription} />
       </label>
+
+      {bankSuggestions && bankSuggestions.length > 0 ? (
+        <BankSuggestionPicker suggestions={bankSuggestions} />
+      ) : null}
 
       <button type="submit" disabled={pending || !balanced}>
         {pending ? 'Posting entry...' : 'Confirm and create journal entry'}
