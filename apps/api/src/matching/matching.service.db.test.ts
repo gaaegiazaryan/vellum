@@ -53,6 +53,7 @@ describe('MatchingService (integration)', () => {
 
   beforeEach(async () => {
     await sql`DELETE FROM extractions`;
+    await sql`DELETE FROM uploads`;
     await sql`DELETE FROM bank_transactions`;
     await sql`DELETE FROM plaid_accounts`;
     await sql`DELETE FROM plaid_items`;
@@ -89,11 +90,16 @@ describe('MatchingService (integration)', () => {
     `;
     if (opts.vendor) {
       const receipt = JSON.stringify({ vendor: { name: opts.vendor }, totalMinor: '0' });
+      const uploadId = opts.id + '_u';
+      await sql`
+        INSERT INTO uploads (id, storage_key, mime_type, size_bytes, sha256)
+        VALUES (${uploadId}, ${'k_' + uploadId}, 'image/png', '100', ${'sha_' + uploadId})
+      `;
       await sql`
         INSERT INTO extractions
           (id, upload_id, status, provider, model, prompt_version, request_hash, journal_entry_id, receipt)
         VALUES
-          (${opts.id + '_x'}, ${opts.id + '_u'}, 'succeeded', 'mock', 'mock', 'v1', ${'hash_' + opts.id}, ${opts.id}, ${receipt}::jsonb)
+          (${opts.id + '_x'}, ${uploadId}, 'succeeded', 'mock', 'mock', 'v1', ${'hash_' + opts.id}, ${opts.id}, ${receipt}::jsonb)
       `;
     }
   }
