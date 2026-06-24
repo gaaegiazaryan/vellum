@@ -91,6 +91,28 @@ describe('scoreVendor', () => {
     // Curly apostrophe variant some OCRs emit.
     expect(scoreVendor('McDonald’s', 'MCDONALDS')).toBe(1);
   });
+
+  it('strips POS prefixes (TST*, SQ*, PAYPAL *) so the meaningful name matches', () => {
+    expect(scoreVendor('TST* Blue Bottle', 'Blue Bottle')).toBe(1);
+    expect(scoreVendor('SQ *Blue Bottle', 'Blue Bottle')).toBe(1);
+    expect(scoreVendor('PAYPAL *MERCH', 'merch')).toBe(1);
+    // AMZN MKTP US -> 'mktp us' against 'Amazon' scores 0 because the
+    // tokenization does not encode the AMZN -> Amazon alias. A future
+    // alias table (or the fuzzy vendor ADR) closes this; v1 acknowledges
+    // the limitation and lets the user pair manually from /app/banks.
+    expect(scoreVendor('AMZN MKTP US', 'Amazon')).toBe(0);
+  });
+
+  it('strips legal suffixes (Inc, LLC, Ltd, Corporation) so corporate aliases match', () => {
+    expect(scoreVendor('Acme Inc', 'ACME')).toBe(1);
+    expect(scoreVendor('Acme LLC.', 'Acme')).toBe(1);
+    expect(scoreVendor('Acme Corporation', 'acme')).toBe(1);
+  });
+
+  it('strips store / ref numbers so trailing identifiers do not fragment', () => {
+    expect(scoreVendor('WHOLE FOODS #1234', 'Whole Foods')).toBe(1);
+    expect(scoreVendor('Trader Joes 42', 'Trader Joes')).toBe(1);
+  });
 });
 
 describe('score (combined)', () => {

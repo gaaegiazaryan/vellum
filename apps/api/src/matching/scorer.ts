@@ -71,6 +71,21 @@ export function scoreVendor(bank: string | null, entry: string | null): number {
   return 0;
 }
 
+/**
+ * POS / payment-rail prefixes Plaid leaves on merchant strings.
+ * Examples: 'TST* CAFE DU MONDE' (Toast), 'SQ *COFFEE' (Square),
+ * 'PAYPAL *MERCH', 'AMZN MKTP US', 'GP*VENDOR' (Google Pay).
+ * We strip the prefix + the trailing asterisk so the meaningful
+ * merchant name flows through normalize unchanged.
+ */
+const POS_PREFIX = /^(tst|sq|amz|amzn|paypal|gp|ven mo|ach web)\s*\*?\s*/i;
+
+/**
+ * Common legal suffixes that exist on receipts but not on bank
+ * merchant_name strings. Stripping them lets 'Acme LLC' match 'ACME'.
+ */
+const LEGAL_SUFFIX = /\s+(inc|llc|ltd|co|corp|corporation|company)\.?$/i;
+
 function normalize(s: string | null): string {
   if (!s) return '';
   // Apostrophes (straight and curly) first, so 'McDonald\'s' collapses to
@@ -78,8 +93,12 @@ function normalize(s: string | null): string {
   // typically punctuation-free while OCR'd receipts preserve them, and a
   // word split on the apostrophe breaks even the first-token fallback.
   return s
+    .replace(POS_PREFIX, '')
+    .replace(LEGAL_SUFFIX, '')
     .toLowerCase()
     .replace(/['’]+/g, '')
+    .replace(/#\w+/g, '')
+    .replace(/\b\d+\b/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
