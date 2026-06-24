@@ -91,9 +91,9 @@ describe('MatchingService (integration)', () => {
       const receipt = JSON.stringify({ vendor: { name: opts.vendor }, totalMinor: '0' });
       await sql`
         INSERT INTO extractions
-          (id, upload_id, status, provider, model, prompt_version, journal_entry_id, receipt)
+          (id, upload_id, status, provider, model, prompt_version, request_hash, journal_entry_id, receipt)
         VALUES
-          (${opts.id + '_x'}, ${opts.id + '_u'}, 'succeeded', 'mock', 'mock', 'v1', ${opts.id}, ${receipt}::jsonb)
+          (${opts.id + '_x'}, ${opts.id + '_u'}, 'succeeded', 'mock', 'mock', 'v1', ${'hash_' + opts.id}, ${opts.id}, ${receipt}::jsonb)
       `;
     }
   }
