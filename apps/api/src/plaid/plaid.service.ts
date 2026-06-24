@@ -2,9 +2,9 @@ import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs
 import type { PlaidApi } from 'plaid';
 import { CountryCode, Products } from 'plaid';
 import type { Queue } from 'bullmq';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
-import { plaidAccounts, plaidItems } from '../db/schema/plaid.js';
+import { bankTransactions, plaidAccounts, plaidItems } from '../db/schema/plaid.js';
 import { TokenCipher } from './token-cipher.js';
 import { PLAID_CLIENT_TOKEN } from './plaid-client.js';
 import { PLAID_SYNC_QUEUE, type PlaidSyncJobData } from './plaid-sync.queue.js';
@@ -31,6 +31,17 @@ export interface PlaidItemWithAccounts {
     mask: string | null;
     currency: string;
   }>;
+}
+
+export interface UnmatchedTransaction {
+  id: string;
+  occurredAt: Date;
+  amountMinor: string;
+  currency: string;
+  merchantName: string | null;
+  description: string | null;
+  accountName: string;
+  accountMask: string | null;
 }
 
 @Injectable()
@@ -122,6 +133,42 @@ export class PlaidService {
         });
     }
     return result;
+  }
+
+  /**
+   * Unmatched bank transactions for a user, newest-first. The /app/banks
+   * UI uses this to render a pair-button per row. Capped at 100 because
+   * the page does not paginate yet; a future ADR adds infinite scroll
+   * when a real user runs into the cap.
+   */
+  async listUnmatchedTransactions(userId: string): Promise<UnmatchedTransaction[]> {
+    const rows = await this.db
+      .select({
+        id: bankTransactions.id,
+        occurredAt: bankTransactions.occurredAt,
+        amountMinor: bankTransactions.amountMinor,
+        currency: bankTransactions.currency,
+        merchantName: bankTransactions.merchantName,
+        description: bankTransactions.description,
+        accountName: plaidAccounts.name,
+        accountMask: plaidAccounts.mask,
+      })
+      .from(bankTransactions)
+      .innerJoin(plaidAccounts, eq(plaidAccounts.id, bankTransactions.plaidAccountId))
+      .innerJoin(plaidItems, eq(plaidItems.id, plaidAccounts.plaidItemId))
+      .where(and(isNull(bankTransactions.journalEntryId), eq(plaidItems.userId, userId)))
+      .orderBy(desc(bankTransactions.occurredAt))
+      .limit(100);
+    return rows.map((r) => ({
+      id: r.id,
+      occurredAt: r.occurredAt,
+      amountMinor: r.amountMinor.toString(),
+      currency: r.currency,
+      merchantName: r.merchantName,
+      description: r.description,
+      accountName: r.accountName,
+      accountMask: r.accountMask,
+    }));
   }
 
   async listItems(userId: string): Promise<PlaidItemWithAccounts[]> {

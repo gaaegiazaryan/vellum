@@ -14,7 +14,12 @@ import {
 import { z } from 'zod';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
-import { PlaidService, type PlaidItemWithAccounts, type PlaidLinkToken } from './plaid.service.js';
+import {
+  PlaidService,
+  type PlaidItemWithAccounts,
+  type PlaidLinkToken,
+  type UnmatchedTransaction,
+} from './plaid.service.js';
 
 const exchangeBodySchema = z.object({ publicToken: z.string().min(1) });
 
@@ -50,6 +55,14 @@ export class PlaidController {
   ): Promise<{ items: PlaidItemWithAccounts[] }> {
     if (!user) throw new UnauthorizedException();
     return this.plaid.listItems(user.id).then((items) => ({ items }));
+  }
+
+  @Get('unmatched-transactions')
+  listUnmatched(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+  ): Promise<{ transactions: UnmatchedTransaction[] }> {
+    if (!user) throw new UnauthorizedException();
+    return this.plaid.listUnmatchedTransactions(user.id).then((transactions) => ({ transactions }));
   }
 
   @Delete('items/:id')

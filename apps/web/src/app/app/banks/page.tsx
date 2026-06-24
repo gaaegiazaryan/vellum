@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiClient, ApiError } from '@/lib/api';
 import { LinkLauncher } from './link-launcher';
 import { DisconnectButton } from './disconnect-button';
+import { PairButton } from './pair-button';
 
 export const metadata = {
   title: 'Banks — Vellum',
@@ -34,6 +35,21 @@ interface ListResponse {
   items: PlaidItem[];
 }
 
+interface UnmatchedTransaction {
+  id: string;
+  occurredAt: string;
+  amountMinor: string;
+  currency: string;
+  merchantName: string | null;
+  description: string | null;
+  accountName: string;
+  accountMask: string | null;
+}
+
+interface UnmatchedResponse {
+  transactions: UnmatchedTransaction[];
+}
+
 export default async function BanksPage() {
   const session = await auth();
   if (!session) redirect('/signin');
@@ -54,6 +70,16 @@ export default async function BanksPage() {
       loadError = `api returned ${err.status}`;
     } else {
       loadError = 'network error while loading connected banks';
+    }
+  }
+
+  let unmatched: UnmatchedTransaction[] = [];
+  if (plaidEnabled) {
+    try {
+      const res = await client.get<UnmatchedResponse>('/plaid/unmatched-transactions');
+      unmatched = res.transactions;
+    } catch {
+      unmatched = [];
     }
   }
 
@@ -118,11 +144,41 @@ export default async function BanksPage() {
         </section>
       )}
 
+      {plaidEnabled && unmatched.length > 0 && (
+        <section>
+          <h2>Unmatched transactions ({unmatched.length})</h2>
+          <p className="hint">
+            Pair a row with a journal entry to close the reconciliation loop. Skipping is fine; rows
+            stay here until matched or until the bank tells us they were removed.
+          </p>
+          <ul className="unmatched-list">
+            {unmatched.map((tx) => (
+              <li key={tx.id} className="unmatched-row">
+                <span className="merchant">{tx.merchantName ?? tx.description ?? 'Unnamed'}</span>
+                <span className="amount">{formatTxnAmount(tx.amountMinor, tx.currency)}</span>
+                <span className="date">{tx.occurredAt.slice(0, 10)}</span>
+                <span className="account-meta">
+                  {tx.accountName}
+                  {tx.accountMask ? ` · …${tx.accountMask}` : ''}
+                </span>
+                <PairButton bankTransactionId={tx.id} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <nav className="back-nav">
         <Link href="/app">Back to ledger</Link>
       </nav>
     </main>
   );
+}
+
+function formatTxnAmount(minorStr: string, currency: string): string {
+  const cents = Number(minorStr);
+  if (!Number.isFinite(cents)) return `${minorStr} ${currency}`;
+  return `${(cents / 100).toFixed(2)} ${currency}`;
 }
 
 function BankStatus({ status, lastSyncAt }: { status: string; lastSyncAt: string | null }) {
