@@ -272,4 +272,57 @@ describe('PlaidSyncService (integration)', () => {
     const rows = await sql`SELECT plaid_transaction_id FROM bank_transactions`;
     expect(rows.map((r) => r.plaid_transaction_id)).toEqual(['known']);
   });
+
+  it('per-currency scale: JPY transaction stored as integer minor (0 decimals), BHD as 3-decimal', async () => {
+    const sealed = cipher.seal('jp');
+    await sql`
+      INSERT INTO plaid_items (id, user_id, plaid_item_id, access_token_cipher, access_token_iv)
+      VALUES ('it_jp', ${USER}, 'plaid-it_jp', ${sealed.cipher}, ${sealed.iv})
+    `;
+    await sql`
+      INSERT INTO plaid_accounts (id, plaid_item_id, plaid_account_id, name, type, currency)
+      VALUES ('ac_jpy', 'it_jp', 'plaid-acct-jpy', 'JP Card', 'depository', 'JPY')
+    `;
+    await sql`
+      INSERT INTO plaid_accounts (id, plaid_item_id, plaid_account_id, name, type, currency)
+      VALUES ('ac_bhd', 'it_jp', 'plaid-acct-bhd', 'BH Card', 'depository', 'BHD')
+    `;
+    const { plaid } = mockPlaidWithPages([
+      {
+        added: [
+          {
+            ...txnFixture('jpy-1', 'plaid-acct-jpy', 1500, '2026-06-20'),
+            iso_currency_code: 'JPY',
+          },
+          {
+            ...txnFixture('bhd-1', 'plaid-acct-bhd', 12.345, '2026-06-20'),
+            iso_currency_code: 'BHD',
+          },
+        ],
+        next_cursor: 'A',
+        has_more: false,
+      },
+    ]);
+    await new PlaidSyncService(plaid, db, cipher).syncItem('it_jp');
+
+    const rows = await sql`
+      SELECT plaid_transaction_id, amount_minor, currency
+      FROM bank_transactions
+      WHERE plaid_transaction_id IN ('jpy-1', 'bhd-1')
+      ORDER BY plaid_transaction_id
+    `;
+    expect(rows).toHaveLength(2);
+    // ORDER BY plaid_transaction_id puts bhd-1 before jpy-1.
+    // 12.345 BHD at 3 decimals = 12345 minor. Before this fix the
+    // *100 hardcode would have stored 1235 (12.345*100 rounded),
+    // silently mismatching every BHD receipt by 10x.
+    expect(rows[0]?.plaid_transaction_id).toBe('bhd-1');
+    expect(rows[0]?.currency).toBe('BHD');
+    expect(String(rows[0]?.amount_minor)).toBe('12345');
+    // 1500 JPY at 0 decimals = 1500 minor. The hardcode would have
+    // stored 150000 (1500*100), which is 1.5M yen in display - way off.
+    expect(rows[1]?.plaid_transaction_id).toBe('jpy-1');
+    expect(rows[1]?.currency).toBe('JPY');
+    expect(String(rows[1]?.amount_minor)).toBe('1500');
+  });
 });

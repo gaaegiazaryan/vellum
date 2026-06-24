@@ -5,6 +5,7 @@ import { apiClient, ApiError } from '@/lib/api';
 import { LinkLauncher } from './link-launcher';
 import { DisconnectButton } from './disconnect-button';
 import { PairButton } from './pair-button';
+import { formatMoney } from '@/lib/money';
 
 export const metadata = {
   title: 'Banks — Vellum',
@@ -155,7 +156,7 @@ export default async function BanksPage() {
             {unmatched.map((tx) => (
               <li key={tx.id} className="unmatched-row">
                 <span className="merchant">{tx.merchantName ?? tx.description ?? 'Unnamed'}</span>
-                <span className="amount">{formatTxnAmount(tx.amountMinor, tx.currency)}</span>
+                <span className="amount">{formatMoney(tx.amountMinor, tx.currency)}</span>
                 <span className="date">{tx.occurredAt.slice(0, 10)}</span>
                 <span className="account-meta">
                   {tx.accountName}
@@ -173,12 +174,6 @@ export default async function BanksPage() {
       </nav>
     </main>
   );
-}
-
-function formatTxnAmount(minorStr: string, currency: string): string {
-  const cents = Number(minorStr);
-  if (!Number.isFinite(cents)) return `${minorStr} ${currency}`;
-  return `${(cents / 100).toFixed(2)} ${currency}`;
 }
 
 function BankStatus({ status, lastSyncAt }: { status: string; lastSyncAt: string | null }) {
