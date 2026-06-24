@@ -1,10 +1,15 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { DATABASE_TOKEN, type Db } from '../db/database.module.js';
 import { bankTransactions, plaidAccounts, plaidItems } from '../db/schema/plaid.js';
 import { journalEntries, ledgerLines } from '../db/schema/ledger.js';
 import { extractions } from '../db/schema/extractions.js';
 import { MIN_SUGGEST_SCORE, SUGGEST_TOP_N, score } from './scorer.js';
+
+// The scorer's date curve drops to 0 beyond +/- 7 days. Bounding the SQL
+// by the same window avoids a sequential scan over the user's entire
+// unmatched history; rows beyond the window can never make the threshold.
+const DATE_WINDOW_MS = 7 * 86_400_000;
 
 export interface BankSuggestion {
   bankTransactionId: string;
@@ -64,6 +69,8 @@ export class MatchingService {
       vendorName: string | null;
     },
   ): Promise<BankSuggestion[]> {
+    const windowStart = new Date(facts.occurredAt.getTime() - DATE_WINDOW_MS);
+    const windowEnd = new Date(facts.occurredAt.getTime() + DATE_WINDOW_MS);
     const candidates = await this.db
       .select({
         id: bankTransactions.id,
@@ -81,6 +88,8 @@ export class MatchingService {
           isNull(bankTransactions.journalEntryId),
           eq(plaidItems.userId, userId),
           eq(bankTransactions.currency, facts.currency),
+          gte(bankTransactions.occurredAt, windowStart),
+          lte(bankTransactions.occurredAt, windowEnd),
         ),
       );
 
@@ -98,23 +107,44 @@ export class MatchingService {
     const bank = await this.loadBankContext(userId, bankTransactionId);
     if (!bank) return [];
 
+    const windowStart = new Date(bank.occurredAt.getTime() - DATE_WINDOW_MS);
+    const windowEnd = new Date(bank.occurredAt.getTime() + DATE_WINDOW_MS);
+
+    // Pre-aggregate ledger_lines into a per-entry total so the join with
+    // extractions (which is m:1 not 1:1: a re-extracted entry has multiple
+    // rows) does not multiply the SUM by the extraction count.
+    const totals = this.db.$with('entry_totals').as(
+      this.db
+        .select({
+          journalEntryId: ledgerLines.journalEntryId,
+          totalMinor:
+            sql<string>`sum(case when ${ledgerLines.side} = 'DEBIT' then ${ledgerLines.amount} else 0 end)::text`.as(
+              'total_minor',
+            ),
+        })
+        .from(ledgerLines)
+        .groupBy(ledgerLines.journalEntryId),
+    );
+
     const candidates = await this.db
+      .with(totals)
       .select({
         id: journalEntries.id,
         occurredAt: journalEntries.occurredAt,
         description: journalEntries.description,
         currency: journalEntries.currency,
-        // Total = sum of debits (= sum of credits per invariant).
-        totalMinor: sql<string>`coalesce(sum(case when ${ledgerLines.side} = 'DEBIT' then ${ledgerLines.amount} else 0 end), 0)::text`,
+        totalMinor: sql<string>`coalesce(${totals.totalMinor}, '0')`,
         vendorName: sql<string | null>`max(${extractions.receipt} -> 'vendor' ->> 'name')`,
       })
       .from(journalEntries)
-      .innerJoin(ledgerLines, eq(ledgerLines.journalEntryId, journalEntries.id))
+      .leftJoin(totals, eq(totals.journalEntryId, journalEntries.id))
       .leftJoin(extractions, eq(extractions.journalEntryId, journalEntries.id))
       .where(
         and(
           eq(journalEntries.createdById, userId),
           eq(journalEntries.currency, bank.currency),
+          gte(journalEntries.occurredAt, windowStart),
+          lte(journalEntries.occurredAt, windowEnd),
           sql`not exists (select 1 from ${bankTransactions} bt where bt.journal_entry_id = ${journalEntries.id})`,
         ),
       )
@@ -123,6 +153,7 @@ export class MatchingService {
         journalEntries.occurredAt,
         journalEntries.description,
         journalEntries.currency,
+        totals.totalMinor,
       );
 
     return rankEntry(candidates, bank).slice(0, SUGGEST_TOP_N);
@@ -138,11 +169,21 @@ export class MatchingService {
    */
   async pair(userId: string, journalEntryId: string, bankTransactionId: string): Promise<void> {
     const entry = await this.loadEntryContext(userId, journalEntryId);
-    if (!entry) throw new NotFoundException('journal entry not found');
+    if (!entry) {
+      throw new NotFoundException({
+        error: 'journal_entry_not_found',
+        message: 'journal entry not found',
+      });
+    }
     const bank = await this.loadBankContext(userId, bankTransactionId);
-    if (!bank) throw new NotFoundException('bank transaction not found');
+    if (!bank) {
+      throw new NotFoundException({
+        error: 'bank_transaction_not_found',
+        message: 'bank transaction not found',
+      });
+    }
     if (entry.currency !== bank.currency) {
-      throw new ConflictException('currency mismatch');
+      throw new ConflictException({ error: 'currency_mismatch', message: 'currency mismatch' });
     }
 
     try {
@@ -156,11 +197,17 @@ export class MatchingService {
       if (updated.length === 0) {
         // Bank row was paired by a concurrent request; tell the caller
         // they raced and lost rather than silently no-op'ing.
-        throw new ConflictException('bank transaction already paired');
+        throw new ConflictException({
+          error: 'bank_transaction_already_paired',
+          message: 'bank transaction already paired',
+        });
       }
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new ConflictException('journal entry already paired with another bank transaction');
+        throw new ConflictException({
+          error: 'journal_entry_already_paired',
+          message: 'journal entry already paired with another bank transaction',
+        });
       }
       throw err;
     }
@@ -173,7 +220,12 @@ export class MatchingService {
    */
   async unpair(userId: string, bankTransactionId: string): Promise<void> {
     const bank = await this.loadBankContext(userId, bankTransactionId);
-    if (!bank) throw new NotFoundException('bank transaction not found');
+    if (!bank) {
+      throw new NotFoundException({
+        error: 'bank_transaction_not_found',
+        message: 'bank transaction not found',
+      });
+    }
     await this.db
       .update(bankTransactions)
       .set({ journalEntryId: null, matchedAt: null })
@@ -189,26 +241,34 @@ export class MatchingService {
     currency: string;
     vendorName: string | null;
   } | null> {
-    const rows = await this.db
+    // Two separate queries instead of one joined SUM. With a single
+    // GROUP-BY across ledger_lines INNER JOIN extractions LEFT JOIN, an
+    // entry with N extractions multiplies its ledger_lines rows by N
+    // and the SUM doubles (or N-ples). Splitting makes each aggregate
+    // honest at the cost of one extra round-trip.
+    const [base] = await this.db
       .select({
         id: journalEntries.id,
         occurredAt: journalEntries.occurredAt,
         currency: journalEntries.currency,
         totalMinor: sql<string>`coalesce(sum(case when ${ledgerLines.side} = 'DEBIT' then ${ledgerLines.amount} else 0 end), 0)::text`,
-        vendorName: sql<string | null>`max(${extractions.receipt} -> 'vendor' ->> 'name')`,
       })
       .from(journalEntries)
       .innerJoin(ledgerLines, eq(ledgerLines.journalEntryId, journalEntries.id))
-      .leftJoin(extractions, eq(extractions.journalEntryId, journalEntries.id))
       .where(and(eq(journalEntries.id, journalEntryId), eq(journalEntries.createdById, userId)))
       .groupBy(journalEntries.id, journalEntries.occurredAt, journalEntries.currency);
-    const row = rows[0];
-    if (!row) return null;
+    if (!base) return null;
+    const [vendor] = await this.db
+      .select({
+        name: sql<string | null>`max(${extractions.receipt} -> 'vendor' ->> 'name')`,
+      })
+      .from(extractions)
+      .where(eq(extractions.journalEntryId, journalEntryId));
     return {
-      occurredAt: row.occurredAt,
-      totalMinor: BigInt(row.totalMinor),
-      currency: row.currency,
-      vendorName: row.vendorName,
+      occurredAt: base.occurredAt,
+      totalMinor: BigInt(base.totalMinor),
+      currency: base.currency,
+      vendorName: vendor?.name ?? null,
     };
   }
 
@@ -279,7 +339,14 @@ function rankBank(
       return { c, combined: s.combined };
     })
     .filter((r) => r.combined >= MIN_SUGGEST_SCORE)
-    .sort((a, b) => b.combined - a.combined);
+    // Stable secondary key (newer-first by occurred_at, then id) so
+    // duplicate-score candidates rank deterministically across runs.
+    .sort(
+      (a, b) =>
+        b.combined - a.combined ||
+        b.c.occurredAt.getTime() - a.c.occurredAt.getTime() ||
+        (a.c.id < b.c.id ? -1 : a.c.id > b.c.id ? 1 : 0),
+    );
   return scored.map((r) => ({
     bankTransactionId: r.c.id,
     occurredAt: r.c.occurredAt,
@@ -308,7 +375,12 @@ function rankEntry(
       return { c, combined: s.combined };
     })
     .filter((r) => r.combined >= MIN_SUGGEST_SCORE)
-    .sort((a, b) => b.combined - a.combined);
+    .sort(
+      (a, b) =>
+        b.combined - a.combined ||
+        b.c.occurredAt.getTime() - a.c.occurredAt.getTime() ||
+        (a.c.id < b.c.id ? -1 : a.c.id > b.c.id ? 1 : 0),
+    );
   return scored.map((r) => ({
     journalEntryId: r.c.id,
     occurredAt: r.c.occurredAt,

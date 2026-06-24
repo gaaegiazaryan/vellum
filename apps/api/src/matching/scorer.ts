@@ -73,8 +73,13 @@ export function scoreVendor(bank: string | null, entry: string | null): number {
 
 function normalize(s: string | null): string {
   if (!s) return '';
+  // Apostrophes (straight and curly) first, so 'McDonald\'s' collapses to
+  // 'mcdonalds' instead of 'mcdonald s'. Plaid merchant strings are
+  // typically punctuation-free while OCR'd receipts preserve them, and a
+  // word split on the apostrophe breaks even the first-token fallback.
   return s
     .toLowerCase()
+    .replace(/['’]+/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -86,8 +91,18 @@ function firstToken(s: string): string {
 }
 
 function daysBetween(a: Date, b: Date): number {
-  const ms = a.getTime() - b.getTime();
-  return Math.round(ms / 86_400_000);
+  // Calendar-day diff in UTC, NOT a 24h rolling delta. Late-night
+  // receipts vs morning-after Plaid postings on the same date should
+  // score 'same day', and ones across midnight should not silently
+  // promote to 0 by sneaking past a 12h rounding threshold. Floor each
+  // to UTC midnight before subtracting.
+  const ordA = Math.floor(
+    Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate()) / 86_400_000,
+  );
+  const ordB = Math.floor(
+    Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate()) / 86_400_000,
+  );
+  return ordA - ordB;
 }
 
 function round3(n: number): number {

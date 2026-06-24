@@ -48,6 +48,14 @@ describe('scoreDate', () => {
     expect(scoreDate(d('2026-06-18T08:00:00Z'), d('2026-06-20T08:00:00Z'))).toBe(0.4);
     expect(scoreDate(d('2026-06-22T08:00:00Z'), d('2026-06-20T08:00:00Z'))).toBe(0.4);
   });
+
+  it('uses calendar-day semantics, not a 24h rolling delta (late-night vs morning-after on same date)', () => {
+    // 23:30 UTC and 02:30 UTC the SAME date both fall on calendar-day 0.
+    expect(scoreDate(d('2026-06-20T23:30:00Z'), d('2026-06-20T02:30:00Z'))).toBe(1);
+    // 23:30 UTC and 02:30 UTC the NEXT calendar day are 1 day apart, not 0
+    // (Math.round of a 3h delta would have rounded to 0).
+    expect(scoreDate(d('2026-06-20T23:30:00Z'), d('2026-06-21T02:30:00Z'))).toBe(0.8);
+  });
 });
 
 describe('scoreVendor', () => {
@@ -73,6 +81,15 @@ describe('scoreVendor', () => {
     expect(scoreVendor(null, 'Blue Bottle')).toBe(0);
     expect(scoreVendor('Blue Bottle', null)).toBe(0);
     expect(scoreVendor('', 'Blue Bottle')).toBe(0);
+  });
+
+  it("apostrophes do not fragment the vendor name (McDonalds vs McDonald's)", () => {
+    // Common Plaid (punctuation-stripped) vs OCR (apostrophe-preserving)
+    // shape. Before the apostrophe normalization fix the impl turned
+    // "McDonald's" into "mcdonald s" and missed the exact match.
+    expect(scoreVendor("McDonald's", 'MCDONALDS')).toBe(1);
+    // Curly apostrophe variant some OCRs emit.
+    expect(scoreVendor('McDonald’s', 'MCDONALDS')).toBe(1);
   });
 });
 

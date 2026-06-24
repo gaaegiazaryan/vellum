@@ -320,4 +320,182 @@ describe('MatchingService (integration)', () => {
     await svc.pair(USER, entryId, bankId);
     await expect(svc.unpair(OTHER_USER, bankId)).rejects.toThrow();
   });
+
+  it('unpair is idempotent: a second call on an unpaired row is a no-op', async () => {
+    const { entryId, bankId } = await seed();
+    await svc.pair(USER, entryId, bankId);
+    await svc.unpair(USER, bankId);
+    // Second call must not throw and must leave the row unchanged.
+    await expect(svc.unpair(USER, bankId)).resolves.toBeUndefined();
+  });
+
+  it('regression: SUM does not double when an entry has multiple extractions', async () => {
+    // The original loadEntryContext JOINed ledger_lines INNER + extractions
+    // LEFT in one query. With 2 extractions for the same entry the
+    // ledger_lines rows were duplicated and SUM doubled, making the score
+    // compare against 2x the real total. Re-add a second extraction for
+    // the same entry and verify the scorer still picks the right candidate.
+    const { entryId, bankId } = await seed();
+    const uploadId2 = 'je_a_u2';
+    await sql`
+      INSERT INTO uploads (id, storage_key, mime_type, size_bytes, sha256)
+      VALUES (${uploadId2}, ${'k_' + uploadId2}, 'image/png', '100', ${'sha_' + uploadId2})
+    `;
+    await sql`
+      INSERT INTO extractions
+        (id, upload_id, status, provider, model, prompt_version, request_hash, journal_entry_id, receipt)
+      VALUES
+        ('je_a_x2', ${uploadId2}, 'succeeded', 'mock', 'mock', 'v1', 'hash_je_a_2',
+         ${entryId}, ${JSON.stringify({ vendor: { name: 'Blue Bottle' } })}::jsonb)
+    `;
+    const out = await svc.suggestForEntry(USER, entryId);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.bankTransactionId).toBe(bankId);
+    // Score must remain in the perfect-amount band, not collapse to a
+    // wrong-amount band because the SUM doubled to 1958.
+    expect(out[0]?.score).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it('date-window: a bank row beyond +/- 7 days is filtered at the SQL layer', async () => {
+    await seedEntry({
+      id: 'je_win',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      totalMinor: 979n,
+      vendor: 'Blue Bottle',
+    });
+    await seedBank({
+      id: 'bt_far',
+      userId: USER,
+      occurredAt: '2026-07-15',
+      amountMinor: 979n,
+      merchant: 'Blue Bottle',
+    });
+    const out = await svc.suggestForEntry(USER, 'je_win');
+    expect(out).toHaveLength(0);
+  });
+
+  it('pair rejects a currency mismatch (USD bank tx vs EUR entry)', async () => {
+    await seedEntry({
+      id: 'je_eur',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      totalMinor: 979n,
+      vendor: 'Blue Bottle',
+      currency: 'EUR',
+    });
+    await seedBank({
+      id: 'bt_usd',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      amountMinor: 979n,
+      merchant: 'Blue Bottle',
+      currency: 'USD',
+    });
+    await expect(svc.pair(USER, 'je_eur', 'bt_usd')).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'currency_mismatch' }),
+    });
+  });
+
+  it('pair surfaces error_slug bodies (ADR-0016)', async () => {
+    const { entryId, bankId } = await seed();
+    await svc.pair(USER, entryId, bankId);
+    // Same bank row, different entry: WHERE journal_entry_id IS NULL guard.
+    await seedEntry({
+      id: 'je_b',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      totalMinor: 979n,
+      vendor: 'Blue Bottle',
+    });
+    await expect(svc.pair(USER, 'je_b', bankId)).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'bank_transaction_already_paired' }),
+    });
+  });
+
+  it('suggestForBank excludes journal entries already paired with another bank tx', async () => {
+    const { entryId, bankId } = await seed();
+    await svc.pair(USER, entryId, bankId);
+    // Now add a SECOND bank row and ask whose suggested entries would be.
+    await seedBank({
+      id: 'bt_other',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      amountMinor: 979n,
+      merchant: 'Blue Bottle',
+    });
+    const out = await svc.suggestForBank(USER, 'bt_other');
+    expect(out).toHaveLength(0); // the only entry is already paired
+  });
+
+  it('suggestForBank filters by user (cross-user entries invisible)', async () => {
+    await seedEntry({
+      id: 'je_other',
+      userId: OTHER_USER,
+      occurredAt: '2026-06-20',
+      totalMinor: 979n,
+      vendor: 'Blue Bottle',
+    });
+    await seedBank({
+      id: 'bt_my',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      amountMinor: 979n,
+      merchant: 'Blue Bottle',
+    });
+    const out = await svc.suggestForBank(USER, 'bt_my');
+    expect(out).toHaveLength(0);
+  });
+
+  it('suggestForBank filters by currency', async () => {
+    await seedEntry({
+      id: 'je_eur2',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      totalMinor: 979n,
+      vendor: 'Blue Bottle',
+      currency: 'EUR',
+    });
+    await seedBank({
+      id: 'bt_usd2',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      amountMinor: 979n,
+      merchant: 'Blue Bottle',
+      currency: 'USD',
+    });
+    const out = await svc.suggestForBank(USER, 'bt_usd2');
+    expect(out).toHaveLength(0);
+  });
+
+  it('ranking is deterministic on identical scores (secondary key by occurredAt then id)', async () => {
+    await seedEntry({
+      id: 'je_tie',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      totalMinor: 979n,
+      vendor: 'Blue Bottle',
+    });
+    // Two identical-amount, identical-vendor bank rows on the same date
+    // tie on combined score; the deterministic sort puts the lexicographically
+    // smaller id last because occurredAt is equal and ids tie-break ascending.
+    await seedBank({
+      id: 'bt_b',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      amountMinor: 979n,
+      merchant: 'Blue Bottle',
+    });
+    await seedBank({
+      id: 'bt_a',
+      userId: USER,
+      occurredAt: '2026-06-20',
+      amountMinor: 979n,
+      merchant: 'Blue Bottle',
+    });
+    const out1 = await svc.suggestForEntry(USER, 'je_tie');
+    const out2 = await svc.suggestForEntry(USER, 'je_tie');
+    expect(out1.map((s) => s.bankTransactionId)).toEqual(out2.map((s) => s.bankTransactionId));
+    expect(out1.map((s) => s.bankTransactionId)).toEqual(['bt_a', 'bt_b']);
+  });
 });
